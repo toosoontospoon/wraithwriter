@@ -1,0 +1,33 @@
+# secrets
+.env
+.env.*
+!.env.example
+# python
+__pycache__/
+*.pyc
+.venv/
+venv/
+.pytest_cache/
+*.egg-info/
+build/
+dist/
+# bookforge projects, manuscripts and run output
+projects/
+project/
+*-project/
+manuscripts/
+manuscript/
+output/
+outputs/
+state/
+logs/
+*.log
+*.jsonl
+costs.jsonl
+calls.jsonl
+.cache/
+*.md.bak
+# local tooling
+.claude/
+.idea/
+.vscode/

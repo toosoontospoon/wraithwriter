@@ -1,0 +1,688 @@
+# Bulk slop phrases (severity 1, density only). Derived from sam-paech/antislop-sampler
+# (slop_phrase_prob_adjustments.json + slop_phrases_2025-04-07.json), Apache License 2.0,
+# https://github.com/sam-paech/antislop-sampler . Filtered: removed coding terms, default names
+# (covered by stock_names) and common verbs too generic to flag alone. One phrase per line. Multi-word phrases only; single words live in ai_tells.yaml.
+testament to
+barely above a whisper
+barely a whisper
+orchestra of
+dance of
+maybe, just maybe
+maybe that was enough
+perhaps, just perhaps
+was only just beginning
+world of
+shivers down
+shivers up
+shiver down
+shiver up
+moth to a flame
+eyes glinted
+humble abode
+cold and calculating
+eyes never leaving
+body and soul
+a dance of
+chuckles darkly
+maybe, that was enough
+they would face it together
+a reminder
+that was enough
+for now, that was enough
+for now, that's enough
+with a mixture of
+air was filled with anticipation
+bore silent witness to
+eyes sparkling with mischief
+practiced ease
+ready for the challenges
+only just getting started
+nestled deep within
+ethereal beauty
+life would never be the same
+it's important to remember
+for what seemed like an eternity
+little did he know
+ball is in your court
+game is on
+choice is yours
+feels like an electric shock
+threatens to consume
+dive into
+not only
+today's digital age
+game changer
+designed to enhance
+it is advisable
+when it comes to
+in the realm of
+unlock the secrets
+unveil the secrets
+and robust
+it's important to note
+in summary
+remember that
+take a dive into
+in the world of
+to consider
+there are a few considerations
+it's essential to
+as a professional
+you may want to
+on the other hand
+as previously mentioned
+it's worth noting that
+to summarize
+to put it simply
+in today's digital era
+sights unseen
+sounds unheard
+in conclusion
+was soft and gentle
+leaving trails of fire
+audible pop
+rivulets of
+despite herself
+reckless abandon
+torn between
+fiery red hair
+long lashes
+world narrows
+chestnut eyes
+cheeks flaming
+cheeks hollowing
+took a deep breath
+voice barely above a whisper
+couldn't help but feel
+help but feel a sense
+voice barely audible
+casting long shadows
+voice barely a whisper
+couldn't shake the feeling
+couldn't help but wonder
+long shadows across
+heart pounding in my chest
+sun dipped below the horizon
+felt a chill run
+air was thick with the scent
+felt like an eternity
+heart pounding in her chest
+voice steady despite
+felt a shiver run
+said, his voice low
+room fell silent
+ready to face whatever
+trying to make sense
+said, his voice barely
+dipped below the horizon, casting
+said, her voice barely
+asked, my voice barely
+deep breath, trying
+felt a strange sense
+something else entirely
+could feel the weight
+words hung in the air
+heart pounding in his chest
+brow furrowed in concentration
+sun began to set
+smile playing on his lips
+voice trembling slightly
+asked, her voice barely
+door creaked open
+days turned into weeks
+voice a low rumble
+growing sense of unease
+took a step back
+heart skipped a beat
+air hung thick
+said, her voice steady
+rain continued to fall
+sun hung low
+shiver run down my spine
+took a step forward
+said, my voice barely
+casting a warm glow
+renewed sense of purpose
+spreading across his face
+taking a deep breath
+horizon, casting long
+hung low in the sky
+whispered, her voice barely
+smile spreading across
+leaned back in his chair
+low in the sky, casting
+hung heavy in the air
+eyes wide with fear
+took a step closer
+shake the feeling that something
+something else, something
+face whatever challenges
+one last time
+spread like wildfire
+asked, his voice barely
+road ahead would
+felt a sense of peace
+newfound sense of purpose
+door swung open
+grin spreading across
+eyes filled with a mixture
+said, his voice a low
+flicker of something akin
+eyes locked onto
+dimly lit room
+tried to make sense
+challenges lay ahead
+hung in the air, heavy
+chill run down my spine
+small, intricately carved
+said, his voice filled
+eyes darting around
+said, his voice steady
+couldn't help but notice
+deep breath, steeling
+brow furrowed in confusion
+sent a shiver down my spine
+chill run down her spine
+would find a way
+young woman named
+breath caught in her throat
+fingers flying across
+eyes wide with wonder
+dust motes danced
+mind raced, trying
+figure emerged from the shadows
+heart hammered against my ribs
+turned and walked away
+piercing blue eyes
+felt a strange sensation
+small smile playing
+trying to keep my voice
+felt a cold dread
+hung thick with the scent
+air was thick with tension
+sky, casting long
+would never forget
+whatever challenges lay
+mind racing with questions
+said, trying to sound
+said, her voice trembling
+gaze sweeping across
+spent countless hours
+said, his voice dripping
+resonated deep within
+first time in a long
+blood ran cold
+deep breath, feeling
+mind racing with the implications
+mind racing with possibilities
+eyes widened in surprise
+said, her voice filled
+eyes wide with a mixture
+smile playing on her lips
+could find a way
+never seen anything
+knew one thing
+said, my voice steady
+air thick with the scent
+eyes scanning the room
+felt a growing sense
+seen anything like
+asked, her voice trembling
+help but feel a twinge
+smile spread across
+breath caught in my throat
+heart pounded in my chest
+feel a sense of unease
+scent of damp earth
+growing sense of dread
+looked around the room
+intricately carved wooden
+raised a hand, silencing
+began to set, casting
+sighed, running a hand
+hand instinctively reaching
+sense of peace wash
+heart heavy with the weight
+knew that the road ahead
+said, her voice soft
+smile tugging at the corners
+leaned forward, his eyes
+keep my voice steady
+knuckles turning white
+said, her voice firm
+felt a glimmer of hope
+heart pounded in her chest
+cast long shadows
+eyes widened in shock
+first time since
+air grew thick
+feel a sense of pride
+horizon, painting the sky
+whispered, his voice barely
+faint, almost imperceptible
+said, his voice firm
+continued to fall, washing
+casting an eerie glow
+ahead would be long
+knew, with a chilling certainty
+eyes locking onto
+voice thick with emotion
+mind already racing
+air was thick with anticipation
+said, trying to keep
+find a way to break
+long, dancing shadows
+uuwu, uuwu, uuwu
+casting a golden glow
+chill run down his spine
+whispered, her voice trembling
+needed to find a way
+change the course of history
+couldn't quite place
+eyes wide with terror
+pushed open the door
+time would tell
+would change the course
+need to find a way
+sent shivers down my spine
+asked, my voice trembling
+find a way to make
+painting the sky in hues
+eyes wide with disbelief
+air grew colder
+said, her voice low
+time in a long time
+began to take shape
+life would never
+said, his voice laced
+small, almost imperceptible
+eyes filled with tears
+one thing was certain
+challenges that lay ahead
+cool night air
+whatever lay ahead
+could feel the power
+first time in years
+legs over the side of the bed
+one step ahead
+eyes fluttered open
+shiver ran down my spine
+like a physical blow
+chill ran down my spine
+couldn't help but smile
+nodded, a small smile
+set, casting long
+horizon, casting a warm
+given a second chance
+voice tinged with a hint
+shiver run down her spine
+took another step
+like a second skin
+make things right
+shook my head, trying
+asked, trying to keep
+eyes darted around
+could almost hear
+tasting like ash
+darting around the room
+exchanged uneasy glances
+screen flickered to life
+whatever came next
+mix of excitement and trepidation
+fingers dancing across
+heart pounding with a mixture
+felt like hours
+felt a flicker of hope
+felt a surge of energy
+blinding flash of light
+heart pounded in his chest
+wave of nausea washed
+senses on high alert
+deep breath and stepped
+blood run cold
+brow furrowed with concern
+warm, golden glow
+heart skip a beat
+air hung heavy
+seemed to hold its breath
+air crackled with energy
+mind racing with a thousand
+lumina, lumina, lumina
+locked onto mine
+felt a surge of anger
+voice devoid of emotion
+first light of dawn
+breath, trying to steady
+leaned back in her chair
+world held its breath
+young man named
+dancing shadows across
+dimly lit chamber
+hung in the air like
+watched in stunned silence
+course of human history
+steady despite the turmoil
+tall, imposing figure
+strange sense of peace
+question hung in the air
+felt a sense of purpose
+would do whatever it took
+new york city
+breath, trying to calm
+sound like wind
+said, his voice trembling
+dipped below the horizon, painting
+faces etched with a mixture
+one thing was clear
+nodded, her mind racing
+finally, after what felt like
+something far more sinister
+air was thick with the smell
+eyes snapped open
+like polished obsidian
+couldn't help but think
+faint smile playing
+carved wooden box
+stumbled upon something
+mixture of excitement and trepidation
+help but wonder what the future
+felt a profound sense
+casting a golden hue
+said, his voice tinged
+spreading across her face
+trying to piece together
+find a way to stop
+voice low and urgent
+whispered, my voice barely
+spread across his face
+corrugated iron roof
+cold dread creep
+would stop at nothing
+eyes wide with shock
+face whatever lay
+would change everything
+moon hung low
+chuckled, a sound like
+couldn't quite put
+raised an eyebrow, intrigued
+smile playing at the corners
+gaze fell upon
+felt a pang of guilt
+unlike anything i had ever
+creaked open, revealing
+could feel the tension
+felt a flicker of something
+silent for a long moment
+said, my voice trembling
+door burst open
+face whatever came
+made my way back
+felt a surge of power
+fingers trembling slightly
+collective gasp rippled
+casting eerie shadows
+let us begin
+sense of relief wash
+relic of a bygone era
+eyes filled with a mix
+words echoed in my mind
+words caught in my throat
+said, my voice firm
+wide with a mixture of fear
+low, resonant hum
+couldn't help but marvel
+could change the course
+fingers danced across
+felt a surge of hope
+panic clawed at my throat
+leaned back in my chair
+hands trembling slightly
+eyes widened in horror
+said, her voice laced
+strange tingling sensation
+could have ever imagined
+pushed the door open
+word hung in the air
+feel a growing sense
+let out a shaky breath
+mixture of fear and determination
+almost too much to bear
+felt less like
+unlike anything she had ever
+carefully constructed facade
+walked away, leaving
+flickering neon sign
+nothing could have prepared
+elara said, her voice
+mouth suddenly dry
+rain intensified, drumming
+voice laced with a hint
+man said, his voice
+world a better place
+last thing i remembered
+long shadows that danced
+figure stepped forward
+piercing green eyes
+sound that sent shivers
+like wind chimes
+dust motes dancing
+world around us
+could change everything
+heart pounding with a mix
+wonder what the future held
+first thing i noticed
+nodded, feeling a sense
+flying across the keyboard
+like distant thunder
+thick with the scent of damp
+voice a low growl
+eyes widened in disbelief
+elara took a deep
+casting a warm, golden
+spreading across my face
+sterile white walls
+door hissed open
+sun dipped low
+subtle, almost imperceptible
+reached across the table
+vast expanse of space
+make sense of what was happening
+something felt different
+voice gaining strength
+another day, another
+turned into weeks, and the weeks
+shadows across the room
+laughed, a sound like
+said, stepping closer
+eyes scanning the horizon
+strange new world
+voice dropping to a conspiratorial
+feel a sense of excitement
+could almost feel
+like ash in my mouth
+thought sent a shiver
+asked, his voice laced
+filled with a mixture of fear
+asked, his voice trembling
+like molten gold
+never leaving mine
+make sense of the situation
+seemed to absorb the light
+words tasting like
+said, his voice calm
+felt a surge of determination
+brow furrowed in thought
+beacon of hope in a world
+paced back and forth
+forge a new path
+room was dimly lit
+shadows that danced across
+voice low and menacing
+help but feel a growing
+felt a deep sense
+journey ahead would
+raced, trying to make
+hanging heavy in the air
+air was thick with the stench
+exchanged nervous glances
+long as i could remember
+freshly brewed coffee
+took a tentative step
+strange sense of calm
+voice dripping with sarcasm
+something unexpected happened
+something deep within
+determined to uncover the truth
+clock struck midnight
+sun was setting, casting
+uncover the truth behind
+weeks, and the weeks into months
+gaze locked onto
+part of something greater
+first rays of dawn
+glanced around the room
+help but feel a pang
+said, his voice smooth
+felt a renewed sense
+sense of unease settled
+hammered against my ribs, a frantic
+steady despite the tremor
+wave of dizziness washed
+could see the fear
+hush fell over the crowd
+voice low and dangerous
+ribs, a frantic drumbeat
+moment, i thought i saw
+felt a surge of panic
+painting the sky with hues
+sky in hues of orange
+felt a surge of adrenaline
+felt a surge of pride
+ahead would be fraught
+tasted like ash
+hint of a smile playing
+sent a chill down my spine
+feel a sense of awe
+buried deep within
+flicker of movement caught
+change the course of human
+heart pounding with anticipation
+felt a sense of relief
+throat suddenly dry
+asked, his voice low
+voice dripping with malice
+dropping to a conspiratorial whisper
+voice calm and measured
+said, forcing a smile
+tears streaming down her face
+eyes met mine
+motes danced in the single
+mixture of awe and trepidation
+heart hammering against my ribs
+freshly baked bread
+weeks turned into months
+swallowed hard, trying
+mind racing as i tried
+breath catching in her throat
+voice surprisingly steady
+movements fluid and graceful
+heart of the bustling city
+one thing for certain
+inside, the air was thick
+door slammed shut
+couldn't wait to see
+felt a wave of nausea
+sun had barely risen
+mind racing with thoughts
+eyes meeting mine
+ground beneath my feet
+long, distorted shadows
+eye could see
+wrap my head around
+flickered to life, displaying
+like a tidal wave
+could feel the energy
+looked suspiciously like
+chapter based on the provided
+eyes widening in surprise
+deep breath and began
+swung my legs over the side
+squeezed my eyes shut
+coming in ragged gasps
+grin spread across
+flickering fluorescent lights
+make the world a better
+knew that i would never
+must find a way
+sighed, a sound like
+asked, her voice laced
+door slid open
+fingers tracing the intricate
+casting dancing shadows
+line went dead
+felt a cold sweat
+life support systems
+far as the eye could
+voice laced with concern
+sent a shiver down her spine
+replied, her voice steady
+said, my voice low
+darted around the room
+brow furrowing in confusion
+power of the human spirit
+eyes darting nervously
+hues of orange and purple
+felt a strange connection
+would forever change
+breath caught in his throat
+mind racing with the possibilities
+casting long, dancing
+voice steady and resolute
+said, his voice soft
+breath coming in ragged
+felt a wave of relief
+said, her voice tinged
+whispered in hushed tones
+made the right choice
+crowd fell silent
+surge of energy coursing
+couldn't help but chuckle
+stepped forward, her voice
+shiver run down his spine
+danced in the single shaft
+man whose face
+stars began to twinkle
+force of a physical blow
+leaned forward, her eyes
+stammered, my voice barely
+said, her voice calm
+metallic tang of blood
+said, voice steady
+head, trying to clear
+like dry leaves
+voice a low, resonant
+small smile tugging
+feeling a strange sense
+trying to sound casual
+made a terrible mistake
+sudden gust of wind
+face pale and drawn
+something vaguely metallic
+sun had long since
+like a living thing
+panic began to set
+low, guttural growl
+wave of relief wash
+thick with the scent of old
+run down my spine as i realized
+unexpected turn of events
+adorned with intricate carvings
+first time in centuries
+breath catching in my throat
+fingers tightened around
+stepped forward, his eyes
+whispers grew louder
+mix of fear and determination
+voice low and gravelly
+face etched with worry
+made her way back

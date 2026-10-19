@@ -1,0 +1,398 @@
+# AI-prose tells catalog for the bookforge detector (bookforge/core/detector.py).
+#
+# Fields per entry:
+#   id        unique rule id
+#   category  lexicon | stock_phrase | body_cliche | sensory_cliche | dialogue_tag | therapy_speak |
+#             contrast_frame | cadence | structure | emotion_telling | scene_shape | punctuation |
+#             names | filler
+#   kind      word (whole-word list) | phrase (literal, case-insensitive) | regex | structural (code heuristic)
+#   patterns  list of words / phrases / regexes (not used by structural)
+#   severity  1 = mild (flag only in density), 2 = rewrite if clustered, 3 = always rewrite
+#   where     any | narration | dialogue   (dialogue = inside "...")
+#   fix       instruction handed to the rewrite model for this flag
+#   autofix   optional literal replacement; only for trivially safe swaps (applied outside dialogue)
+#
+# Sources: sam-paech/antislop-sampler slop lists (Apache-2.0), EQ-Bench Creative Writing v3 slop metric,
+# Wikipedia:Signs of AI writing, r/SillyTavernAI "Most hated slop" thread, Sand workflows
+# de-ai-revision + token-scrub-3. See bookforge/style/AI_TELLS_SOURCES.md.
+
+- id: ai_vocab_core
+  category: lexicon
+  kind: word
+  severity: 3
+  where: any
+  patterns: [delve, delves, delved, delving, tapestry, tapestries, testament, symphony, kaleidoscope,
+    myriad, multifaceted, labyrinthine, ministrations, palpable, indelible, gossamer, ethereal,
+    bioluminescent, cacophony, interplay, intricate, intricately, meticulous, meticulously,
+    unwavering, resolute, newfound, unbeknownst, amidst, whilst, liminal, visceral, enigmatic,
+    serendipity, serendipitous, inexorable, inexorably, ineffable, otherworldly, ozone, petrichor]
+  fix: Replace the AI-favorite word with a plain, specific word, or cut it. Name the concrete thing.
+
+- id: ai_vocab_soft
+  category: lexicon
+  kind: word
+  severity: 1
+  where: any
+  patterns: [resonate, resonated, resonating, reverberate, reverberated, echoed, etched, shimmered,
+    shimmering, glinted, glinting, gleamed, twinkled, sparkled, thrummed, thrumming, pulsed, pulsing,
+    tendrils, nestled, wafted, lingered, beacon, realm, embark, embarked, journey, navigate,
+    navigated, navigating, unravel, unraveling, unspoken, solace, camaraderie, resilience,
+    adversity, vibrant, bustling, profound, profoundly, poignant, crucible, crescendo, maelstrom,
+    precipice, imbued, suffused, cocooned]
+  fix: Overused in LLM fiction. Keep at most one per page; otherwise choose a fresher or plainer word.
+
+- id: weave_metaphor
+  category: lexicon
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: ['\b(wove|weave|weaving|woven)\b(?![^.]*\b(basket|cloth|loom|wool|thread)\b)', '\bthreads? of (fate|destiny|hope|fear|memory)\b']
+  fix: Cut the weaving/thread metaphor. Say what actually connects or happens.
+
+- id: dance_orchestra
+  category: stock_phrase
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\b(a |the )?(dance|symphony|orchestra|tapestry|kaleidoscope|ballet) of\b']
+  fix: Remove the "a dance/symphony of X" construction. Describe the actual motion or sound.
+
+- id: abstract_weight
+  category: stock_phrase
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\bthe (weight|gravity|enormity) of (it|this|that|his|her|their|the|what|everything)\b', '\bweight of (the|his|her|their) (words|gaze|stare|silence|decision|world)\b', '\bthe weight of (a|an|every|all|so many) [\w-]+ ?(eyes|stares|gazes|years|expectations|generations)?\b']
+  fix: Replace "the weight of X" with a physical action or a concrete consequence.
+
+- id: something_shifted
+  category: stock_phrase
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\bsomething (shifted|changed|broke|cracked|snapped|clicked|settled|stirred|flickered) (in|inside|within|between|behind)\b', '\bsomething (shifted|changed)\b']
+  fix: Name what changed and show it in an action or line of dialogue.
+
+- id: a_beat
+  category: cadence
+  kind: regex
+  severity: 3
+  where: narration
+  patterns: ['(^|[.!?]\s+)(A|One) (beat|heartbeat|breath|moment)\.', '\bafter a (beat|long beat|moment''s pause)\b', '\b(a|one) beat (passed|later)\b']
+  fix: Delete the screenplay "a beat." pause. Use a concrete small action, or nothing.
+
+- id: lands_landed
+  category: stock_phrase
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\b(the |his |her |that |those )?(words?|question|joke|insult|comment|truth|realization|news) (land|lands|landed|hit|hits|struck|settled|sank in)\b', '\blanded like a (blow|slap|punch|stone)\b', '\bthat landed\b']
+  fix: Cut "the words landed/hit". Show the listener's reaction directly.
+
+- id: physical_blow
+  category: stock_phrase
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\b(hit|struck|felt it|landed) like a (physical )?(blow|punch|fist|slap)\b', '\blike a punch to the (gut|stomach|chest)\b', '\bhit (him|her|them) like (ice water|a wave|a truck|a freight train)\b']
+  fix: Replace the "hit like a blow" simile with a specific bodily or behavioral reaction.
+
+- id: whisper_volume
+  category: dialogue_tag
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\b(voice )?barely (above|more than) a whisper\b', '\bbarely a whisper\b', '\bvoice barely audible\b', '\bin a hushed (tone|voice|whisper)\b']
+  fix: Cut the volume cliche. If quietness matters, show who leans in or what drowns it out.
+
+- id: held_breath
+  category: body_cliche
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\b(let|released|let out) (a|the) breath (she|he|they|i) (didn''t|did not|hadn''t) (know|realize)', '\bbreath (she|he|they|i) (didn''t|hadn''t) (know|realize)d? (she|he|they|i) (was|were|had been) holding\b', '\bbreath (hitched|caught)\b', '\btook a (deep|shaky|steadying) breath\b', '\bexhaled (slowly|shakily)\b']
+  fix: Remove the breath cliche. Give the character a specific action that fits them.
+
+- id: body_stock
+  category: body_cliche
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: ['\bheart (raced|pounded|hammered|thundered|skipped a beat)\b', '\bjaw (clenched|tightened|set)\b', '\bshivers? (ran |went )?(down|up) (her|his|their|my) spine\b', '\bstomach (churned|dropped|knotted|twisted)\b', '\bblood ran cold\b', '\b(a )?muscle (ticked|twitched|jumped) in (his|her) jaw\b', '\bknuckles (turned |went )?white\b', '\bpulse (quickened|jumped|raced)\b', '\bbreath caught in (her|his|their) throat\b', '\bthroat (tightened|went dry)\b']
+  fix: Generic body reaction. Use one specific, character-true reaction or an action instead.
+
+- id: eyes_cliche
+  category: body_cliche
+  kind: regex
+  severity: 2
+  where: any
+  patterns: ['\beyes (sparkling|sparkled|twinkling|twinkled|glinting|glinted|dancing|danced) with (mischief|amusement|humor|delight)\b', '\beyes (never leaving|locked on|bored into|searched)\b', '\b(his|her|their) gaze (softened|hardened|lingered|bore)\b', '\b(eyes|gaze) (darkened|smoldered)\b', '\bunshed tears\b', '\bsomething (unreadable|unfathomable) in (his|her) (eyes|expression|gaze)\b', '\b(an )?unreadable expression\b', '\b(glinting|gleaming|flashing|shining|burning) with something\b', '\bwith something (unreadable|unspoken|like|akin to)\b']
+  fix: Eyes cliche. Show the feeling through what the character does or says.
+
+- id: smile_cliche
+  category: body_cliche
+  kind: regex
+  severity: 1
+  where: narration
+  patterns: ['\b(a )?(small|faint|wry|lopsided|ghost of a) (smile|grin) (tugged|played|curved|crept)\b', '\bthe corner of (his|her) mouth (twitched|lifted|quirked)\b', '\b(smirked|smirking)\b', '\bchuckled darkly\b']
+  fix: Stock smile tic. Use sparingly, once per scene at most.
+
+- id: air_atmosphere
+  category: sensory_cliche
+  kind: regex
+  severity: 3
+  where: narration
+  patterns: ['\b(the )?air (was )?(crackled|thick|heavy|charged|electric|thrummed|hummed) with\b', '\btension (was |hung )?(palpable|thick)\b', '\b(smell|scent|tang) of ozone\b', '\bthe air (grew|was) (thick|heavy)\b', '\bthick enough to cut with a knife\b', '\belectricity (crackled|sparked) between them\b']
+  fix: Cut the atmosphere cliche. Give one precise physical detail of the place instead.
+
+- id: silence_cliche
+  category: stock_phrase
+  kind: regex
+  severity: 3
+  where: narration
+  patterns: ['\bsilence (spoke volumes|stretched|hung|settled|fell|descended|thickened)\b', '\bthe words hung (in the air|between them)\b', '\ba silence that (spoke|said) (louder|more) than\b', '\b(an )?unspoken (understanding|promise|question|agreement) passed\b', '\bneither of them (spoke|moved)\b', '\b(a )?(silent|unspoken|wordless|mutual) (understanding|promise|agreement|message|communication|question)\b', '\b\w+ pass(ed|ing) between (them|us)\b', '\b(eyes|expression|face) (was|were) unreadable\b', '\bfor a long moment\b', '\bfor what (felt|seemed) like (an eternity|forever|hours)\b', '\btime (seemed to )?(stood still|slowed|stopped)\b', '\bthe world (fell|faded|narrowed) away\b', '\beverything else faded\b', '\bthe moment stretched\b']
+  fix: Cut the stalled-time/silence cliche. Move the scene forward with the next real action.
+
+- id: somewhere_dog
+  category: sensory_cliche
+  kind: regex
+  severity: 3
+  where: narration
+  patterns: ['\b[Ss]omewhere (in the distance|far off|outside|nearby|below)?,? an? (dog|owl|bird|siren|car|bell|clock|child)\b', '\bsomewhere, a dog barked\b', '\bthe city hummed\b', '\bdust motes (danced|drifted|swirled|floated)\b', '\bcasting long shadows\b', '\bshadows (danced|played|stretched)\b']
+  fix: Stock ambient filler. Replace with a sound or sight specific to this place and POV, or cut.
+
+- id: maybe_just_maybe
+  category: cadence
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\b(maybe|perhaps), just (maybe|perhaps)\b', '\b(and )?(for now|maybe),? that was enough\b', '\b(was|is) only just (beginning|getting started)\b', '\blife would never be the same\b', '\b(they|we) would face it together\b', '\blittle did (he|she|they|i|we) know\b']
+  fix: Cut the canned closing beat. End on a concrete action, image, or line of dialogue.
+
+- id: and_yet
+  category: cadence
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: ['(^|[.!?]\s+)And yet[,.]', '(^|[.!?]\s+)Still[,.] ', '(^|[.!?]\s+)But (then|still|somehow)[,.]? ', '(^|[.!?]\s+)Somehow[,.] ']
+  fix: Drop the "And yet." pivot. Let the contradiction show in what happens.
+
+- id: couldnt_help
+  category: emotion_telling
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: ['\b(couldn''t|could not) help but (feel|notice|wonder|smile|think)\b', '\b(couldn''t|could not) shake the feeling\b', '\b(a )?(sense|feeling|wave|surge|pang|flicker|flood|rush) of (dread|relief|unease|hope|guilt|pride|warmth|fear|sadness|longing|anticipation|determination|purpose)\b', '\b(felt|feel|feeling) a (sense|wave|surge|pang|flicker) of\b', '\bwith a mixture of\b', '\bdespite (herself|himself|themselves)\b', '\b(he|she|they|i) felt (a|an) [\w ,-]{0,30}(knowing|certainty|calm|ache|pull|tug|resolve|warmth|chill)\b']
+  fix: Told emotion. Show the feeling through behavior, choice, or dialogue, then do not name it.
+
+- id: emotion_label
+  category: emotion_telling
+  kind: regex
+  severity: 1
+  where: narration
+  patterns: ['\b(she|he|they|i) (felt|was|were|seemed) (so )?(angry|sad|happy|afraid|scared|nervous|anxious|guilty|ashamed|relieved|furious|terrified|heartbroken|overwhelmed|grateful|hurt)\b', '\b(she|he|they|i) (realized|understood|knew) (then |now )?that\b']
+  fix: Emotion named outright. If the scene already shows it, cut the label; otherwise dramatize it.
+
+- id: said_bookism
+  category: dialogue_tag
+  kind: regex
+  severity: 2
+  where: any
+  patterns: ['"[^"\n]*[,.!?]"\s+(he|she|they|i|[A-Z][a-z]+) (hissed|growled|purred|snarled|breathed|rasped|husked|murmured|chirped|chimed|interjected|exclaimed|retorted|quipped|intoned|mused|opined|ejaculated|declared|admonished|implored|beamed|laughed|sighed|smirked|grinned)\b']
+  fix: Use "said" or "asked", or an action beat. Let the line itself carry the tone.
+
+- id: said_adverb
+  category: dialogue_tag
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: ['\b(said|asked|replied|whispered|answered|murmured|called) (softly|quietly|gently|firmly|coldly|warmly|dryly|wryly|sternly|sharply|flatly|evenly|carefully|slowly|hesitantly|sheepishly|playfully|teasingly|knowingly|sadly|bitterly|nervously|excitedly|thoughtfully|absently|simply)\b', '\b(softly|quietly|gently|firmly|coldly|dryly|wryly|sternly|flatly|evenly) (said|asked|replied)\b']
+  fix: Cut the adverb on the dialogue tag. Make the line or a beat carry the manner.
+
+- id: adverb_tics
+  category: filler
+  kind: word
+  severity: 1
+  where: narration
+  patterns: [softly, gently, slowly, quietly, suddenly, carefully, slightly, simply, truly, deeply,
+    utterly, absently, absentmindedly, thoughtfully, knowingly, impossibly, inexplicably,
+    almost imperceptibly, imperceptibly]
+  fix: Adverb tic. Cut it or use a stronger verb.
+
+- id: filter_words
+  category: filler
+  kind: regex
+  severity: 1
+  where: narration
+  patterns: ['\b(she|he|they|i) (could see|could hear|could feel|could smell|noticed|watched as|saw that|heard the sound of)\b', '\bseemed to\b', '\bbegan to\b', '\bstarted to\b']
+  fix: Filter word. Present the perception directly.
+
+- id: therapy_speak
+  category: therapy_speak
+  kind: regex
+  severity: 3
+  where: dialogue
+  patterns: ['\b(i hear you|i see you|that''s valid|your feelings are valid|hold space|holding space|boundaries|boundary|trauma|toxic|gaslight|gaslighting|process (this|that|it)|unpack (this|that)|safe space|self-care|healing journey|emotional labor|triggered|validate|validated|i need you to know|you don''t have to carry this alone|you''re (allowed|enough)|it''s okay to (not be okay|feel))\b', '\bthat must (have been|be) (so )?(hard|difficult)\b', '\bi''m (so )?proud of you\b']
+  fix: Modern therapy-speak in dialogue. Rewrite in the speaker's period and personal voice; let care show in what they do or say plainly.
+
+- id: on_the_nose
+  category: emotion_telling
+  kind: regex
+  severity: 2
+  where: dialogue
+  patterns: ['\bi (feel|felt) (so )?(like|that)\b', '\bi''m (angry|scared|sad|hurt|afraid) because\b', '\bwhat i''m (really )?(trying to say|saying) is\b', '\bthe truth is,? i\b', '\bi just (want|wanted|need|needed) (you|someone) to\b']
+  fix: On-the-nose dialogue. Have the character say it in their own plain words, or show it in an action, instead of naming the emotion like a therapist.
+
+- id: not_x_but_y
+  category: contrast_frame
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\bnot\b[^.!?;\n]{1,60}?,?\s*\bbut\b', '\b(it|this|that)(''s| is| was)\s+not\b[^.!?\n]{1,60}?[.,;]\s*(it|this|that)(''s| is| was)\b', '\bless\b[^.!?\n]{1,40}?,\s*more\b', '\bisn''t (just |only )?(about )?[^.!?\n]{1,50}?[,;]\s*(it''s|it is)\b', '\bnot (just|only|merely|simply) [^.!?\n]{1,50}?[,;]? (but|it was|it''s)\b', '(^|[.!?]\s+)Not [^.!?\n]{1,30}\. Not [^.!?\n]{1,30}\.', '\b(rather than|instead of) [^.!?\n]{1,40},']
+  fix: Negative-parallel contrast frame. State the positive thing directly and drop the rejected alternative.
+
+- id: wasnt_it_was
+  category: contrast_frame
+  kind: regex
+  severity: 3
+  where: narration
+  patterns: ['\b(it|this|that) (wasn''t|was not) [^.!?\n]{1,40}\. (it|this|that) was\b', '\b(it|this) wasn''t (anger|fear|grief|love|hate|sadness|pity|relief)\.']
+  fix: The "It wasn't X. It was Y." frame. Say Y directly, or show it.
+
+- id: rhetorical_opener
+  category: structure
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Paragraph or scene opens with a rhetorical question. Open with a concrete action, image, or statement.
+
+- id: rhetorical_cluster
+  category: structure
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Stacked rhetorical questions in narration. Keep at most one; turn the rest into statements or actions.
+
+- id: rule_of_three
+  category: cadence
+  kind: structural
+  severity: 1
+  where: any
+  fix: Triplet lists (A, B, and C). Too many in a row reads as AI rhythm. Keep the best one or two items.
+
+- id: one_line_punch
+  category: structure
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Too many one-line "punch" paragraphs. Fold most into the surrounding paragraph; keep one for a real peak.
+
+- id: em_dash
+  category: punctuation
+  kind: structural
+  severity: 2
+  where: any
+  fix: Em/en dash used as punctuation. Replace with comma, period, colon, or parentheses. (Token scrub does this automatically.)
+
+- id: semicolon_heavy
+  category: punctuation
+  kind: structural
+  severity: 1
+  where: narration
+  fix: Semicolon-heavy prose. Split into separate sentences.
+
+- id: ellipsis_heavy
+  category: punctuation
+  kind: structural
+  severity: 1
+  where: any
+  fix: Frequent ellipses. Keep only for real trailing speech.
+
+- id: scene_end_moral
+  category: scene_shape
+  kind: structural
+  severity: 3
+  where: narration
+  fix: Scene ends on a reflective summary or moral. End on a concrete action, image, or line of dialogue instead; trust the reader.
+
+- id: sensory_list_opening
+  category: scene_shape
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Scene opens with a catalog of senses (smell of X, sound of Y, taste of Z). Open with a character doing something, with one sharp sensory anchor.
+
+- id: emotion_after_show
+  category: emotion_telling
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Paragraph shows a reaction then explains the emotion behind it. Cut the explanation.
+
+- id: quip_density
+  category: structure
+  kind: structural
+  severity: 1
+  where: dialogue
+  fix: Most dialogue lines are short quips. Give some characters plainer, longer, or awkward lines; not everyone is witty.
+
+- id: fragment
+  category: cadence
+  kind: structural
+  severity: 1
+  where: narration
+  fix: Verbless sentence fragment in narration. Make it a complete sentence unless it is a deliberate rare beat.
+
+- id: stock_names
+  category: names
+  kind: word
+  severity: 2
+  where: any
+  patterns: [elara, elias, elian, elianore, lyra, kael, aria, eira, seraphina, thorne, zephyr,
+    aldric, eldoria, whisperwood, ravenswood, oakhaven, moonwhisper, nyx, vesper, silas, jaxon]
+  fix: LLM-default fantasy name. Use only if it is in the cast bible; otherwise rename.
+
+- id: wiki_puffery
+  category: stock_phrase
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: ['\b(stands|stood) as a (testament|reminder|symbol)\b', '\bserves? as a (reminder|testament)\b', '\bplays? a (pivotal|crucial|vital) role\b', '\b(rich|vibrant) (history|tapestry|heritage)\b', '\bin the (heart|midst) of\b', '\bnestled (in|among|between|deep)\b', '\bboasts? (a|an)\b', '\bbreathtaking\b', '\bawe-inspiring\b']
+  fix: Encyclopedia/promotional puffery. Replace with one concrete, specific detail.
+
+- id: assistant_voice
+  category: filler
+  kind: regex
+  severity: 3
+  where: any
+  patterns: ['\bit''s (important|worth) (to note|noting|remembering)\b', '\bin conclusion\b', '\bin summary\b', '\bultimately,\b', '\bat the end of the day\b', '\bin today''s\b', '\bcertainly!\b', '\bof course!\b', '\bi hope this\b', '\bas an ai\b']
+  fix: Assistant/essay register leaked into fiction. Delete.
+
+- id: chapter_echo_title
+  category: scene_shape
+  kind: regex
+  severity: 1
+  where: narration
+  patterns: ['\b(and|but) (that|this) (was|is) (the|a) (beginning|start|end) of\b', '\bthat was the (thing|problem|truth) about\b', '\bhe would remember (this|that) (moment|day|night)\b', '\bshe would remember (this|that) (moment|day|night)\b']
+  fix: Narrator wraps the moment in a tidy reflective line. Cut it.
+
+- id: dialogue_rhythm
+  category: structure
+  kind: structural
+  severity: 2
+  where: any
+  fix: "Break the ping-pong: interrupt, answer with an action or silence, give one speaker a longer run, or cut a line."
+
+- id: narration_block
+  category: structure
+  kind: structural
+  severity: 1
+  where: any
+  fix: "Break up long narration with a line of dialogue, an action beat, or a cut."
+
+- id: quip_cluster
+  category: structure
+  kind: structural
+  severity: 2
+  where: any
+  fix: "Too many zingers in a row. Keep the best one; turn the others into a plain true line, an action, or silence."

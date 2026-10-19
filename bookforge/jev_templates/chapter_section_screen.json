@@ -1,0 +1,97 @@
+{
+ "name": "chapter_section_screen",
+ "description": "Post-draft Jev screen, one call per section. Only questions that proved reliable on a test chapter. Thresholds tuned on jev-1.13.0; re-tune before changing model.",
+ "model": "jev-1.13.0",
+ "state": {
+  "section_id": "{{section_id}}",
+  "bible": "{{bible}}",
+  "scene_plan": "{{scene_plan}}",
+  "known_characters": "{{known_characters}}",
+  "section_text": "{{section_text}}"
+ },
+ "questions": {
+  "session_content_conflict": {
+   "type": "noul",
+   "instructions": "Does `section_text` say which subject or class is taught in a named session or time slot listed in `bible.timetable` that is different from what `bible.timetable` lists for that session?",
+   "criteria": {
+    "true": "A session is described as teaching a subject that bible.timetable does not list for it.",
+    "false": "No session content is stated, or it matches bible.timetable."
+   }
+  },
+  "pov_head_hop": {
+   "type": "noul",
+   "instructions": "The narration must stay in close third person inside the POV character's head only (`bible.pov`). Does the narration in `section_text` directly state what a character other than the POV character feels, thinks, knows, notices or decides inside, rather than showing it through that character's words or visible actions?",
+   "criteria": {
+    "true": "At least one narration sentence reports another character's inner state as fact (e.g. 'Kit felt nervous', 'She knew he was lying').",
+    "false": "Only the POV character's inner states are narrated; other characters are seen from outside."
+   }
+  },
+  "ai_mirrored_lines": {
+   "type": "noul",
+   "instructions": "Does `section_text` contain two or more sentences or clauses built as a mirrored pair, repeating the same opening words or structure for rhetorical effect?",
+   "criteria": {
+    "true": "A repeated-structure pair such as 'He had wanted the house. He had wanted it, and he had wanted it badly.' appears.",
+    "false": "No sentence repeats the structure or opening words of a neighbor for rhetorical effect."
+   }
+  },
+  "ai_rule_of_three": {
+   "type": "noul",
+   "instructions": "Does `section_text` contain a decorative list of exactly three parallel items (nouns, noun phrases, or clauses) used for rhythm, such as 'the A, the B and the C' or 'A, and B, and C'?",
+   "criteria": {
+    "true": "A three-item parallel list used for rhythm appears.",
+    "false": "No three-item rhythmic list appears; lists are of two items or are plain inventories required by the action."
+   }
+  },
+  "ai_tidy_closer": {
+   "type": "noul",
+   "instructions": "Does `section_text` end (in its last paragraph) on a neat, aphoristic, or summarizing line that tells the reader what the scene meant?",
+   "criteria": {
+    "true": "The last paragraph sums up or moralizes, e.g. a crisp epigram or a 'they had seen...' summary.",
+    "false": "The section ends on action, dialogue, or a concrete image without summing up its meaning."
+   }
+  },
+  "ya_appropriate": {
+   "type": "noul",
+   "instructions": "Is `section_text` appropriate for a young-adult novel for readers aged 12 and up (no explicit sex, no graphic gore, no strong profanity)?",
+   "criteria": {
+    "true": "Suitable for readers 12 and up.",
+    "false": "Contains content unsuitable for readers 12 and up."
+   }
+  },
+  "plan_beat": {
+   "type": "choice",
+   "instructions": "Which planned beat from `scene_plan.beats` does `section_text` mainly show? Pick 'none' if it shows none of them.",
+   "criteria": "{{beat_criteria}}"
+  }
+ },
+ "thresholds": {
+  "session_content_conflict": {
+   "flag_at": 0.5
+  },
+  "ai_tidy_closer": {
+   "flag_at": 0.4
+  },
+  "ai_mirrored_lines": {
+   "flag_at": 0.7
+  },
+  "pov_head_hop": {
+   "flag_at": 0.7
+  },
+  "ai_rule_of_three": {
+   "flag_at": 0.5,
+   "flag_with_code_at": 0.4
+  },
+  "ya_appropriate": {
+   "flag_below": 0.8
+  },
+  "_notes": "flag_with_code_at: lower bar used only when the matching regex check (screen.SOFT) also fired in the section."
+ },
+ "bible_hint": {
+  "session_content_conflict": "timetable",
+  "pov_head_hop": "pov",
+  "ai_mirrored_lines": "Style lock: no mirrored lines.",
+  "ai_rule_of_three": "Style lock: no tricolons.",
+  "ai_tidy_closer": "Style lock: no tidy morals or summarizing closers.",
+  "ya_appropriate": "Upper-YA content limits."
+ }
+}

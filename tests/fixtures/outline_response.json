@@ -1,0 +1,39 @@
+[
+  {
+    "id": "ch01",
+    "title": "The First Bottle",
+    "summary": "Elias Mercer has kept the Thornfield lighthouse for three solitary years since his wife's death. During a violent autumn storm, he finds a glass bottle wedged between the rocks below the lighthouse. Inside is a handwritten note describing an event — a fishing boat capsizing near the harbor — that hasn't happened yet. He dismisses it as a prank. Two days later, the event occurs exactly as described. Shaken, Elias begins patrolling the shoreline obsessively, searching for more bottles.",
+    "target_words": 3500,
+    "key_events": [
+      "Establish Elias's isolation and grief",
+      "Storm scene — first bottle discovery",
+      "The note's prediction comes true",
+      "Elias's disbelief turns to obsession"
+    ]
+  },
+  {
+    "id": "ch02",
+    "title": "The Weight of Tomorrow",
+    "summary": "More bottles arrive — each predicting events in the small coastal town of Harrowby. Elias uses one prediction to save a child from a collapsing pier, becoming an unlikely hero. But the next bottle predicts a fire at the town hall during the harvest festival. When Elias tries to warn the townspeople, they think he's gone mad from isolation. He must decide whether to act alone or find someone who believes him.",
+    "target_words": 3500,
+    "key_events": [
+      "Second and third bottles arrive with new predictions",
+      "Elias saves the child — becomes local hero",
+      "The fire prediction — nobody believes him",
+      "Meets Marina, the harbor master's daughter, who half-believes"
+    ]
+  },
+  {
+    "id": "ch03",
+    "title": "The Last Message",
+    "summary": "With Marina's help, Elias evacuates the town hall before the fire. In the aftermath, a final bottle washes ashore. This one is different — the handwriting is his own, and it predicts his death during the winter solstice storm. Elias realizes the bottles have been sent by his future self. He must choose: flee the lighthouse to survive, or stay and keep the light burning to save a ship full of passengers. He chooses to stay. The storm comes, the ship is saved, and Elias survives — the prediction was wrong, or perhaps changed by the act of reading it.",
+    "target_words": 3000,
+    "key_events": [
+      "Town hall evacuation succeeds",
+      "Final bottle — Elias's own handwriting",
+      "The paradox of self-fulfilling prophecy",
+      "Elias's choice: self-preservation vs duty",
+      "Resolution — the prediction changes because he chose selflessly"
+    ]
+  }
+]
