@@ -125,7 +125,14 @@ DEFAULT_CONFIG: Dict[str, Any] = {
              # TYPESAFE_API_KEY only the two code checks run. The reviser is a separate switch.
              "jev_tells": {"enabled": True, "page_words": 350, "min_severity": 1,
                            "band": [0.4, 0.6], "reask": 1, "repeat_window": 6,
-                           "max_hits": 40, "cap_usd": 1.0}},
+                           "max_hits": 40, "cap_usd": 1.0},
+             # Opt-in. The per-category reviser is off unless this is true, and its
+             # fidelity, cut, word-cap, re-tag, and detector guards always run.
+             "jev_revise": {"enabled": False,
+                            "model": "mistralai/mistral-small-3.2-24b-instruct",
+                            "provider": "openrouter", "max_rounds": 2,
+                            "fidelity_threshold": 0.6, "max_cut_ratio": 0.10,
+                            "allow_cuts": True}},
     # Post-draft screen (core/screen.py): code checks + Jev (TypeSafe System One, key TYPESAFE_API_KEY)
     # flag sections; the revise editor then reads only a revision packet. On by default; without
     # TYPESAFE_API_KEY the code checks still run and Jev is skipped. See README.

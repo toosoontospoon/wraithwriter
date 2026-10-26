@@ -69,6 +69,8 @@ def run(ctx, chapter_id: str):
         "score_before": residual.get("score_before"),
         "score_after": residual.get("score_after"),
     }}
+    from bookforge.core import jev_revise
+    final, gate["jev_revise"] = jev_revise.maybe_revise(final, ctx, step_dir)
     crit = read_json(ctx.state_dir / "critiques" / f"{chapter_id}.json", {}) or {}
     d_final, ob, ru = _duties(ctx, chapter, final, step_dir)
     tc0, rc0 = crit.get("thread_checks", []), crit.get("rule_checks", [])
