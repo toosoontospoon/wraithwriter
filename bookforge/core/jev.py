@@ -100,7 +100,9 @@ def ask(state, questions: dict, model: str = "jev-1.13.0", tag: str = "", log_di
             return res
         except Exception as e:  # network, HTTP, JSON
             err = str(e)[:300]
-            if "HTTP 4" in err and "HTTP 429" not in err:
+            # A test fake that rejects the payload should fail closed at once. Live HTTP
+            # errors still retry once. Client errors other than 429 do not retry.
+            if _FAKE is not None or ("HTTP 4" in err and "HTTP 429" not in err):
                 break
             time.sleep(1.0)
     _log(log_dir, {"ts": time.time(), "tag": tag, "requested": model, "ok": False, "error": err, "cost_usd": 0})

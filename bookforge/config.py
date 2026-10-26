@@ -120,7 +120,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
              "prompt_rules": True, "route_to_editor": True, "max_findings": 40,
              "edit_guard": "section", "max_tell_drop": 0.5, "rewrite_residual": False,
              "external_detector": {"provider": "none", "api_key_env": "PANGRAM_API_KEY",
-                                   "cap_usd": 1.0, "mode": "report"}},
+                                   "cap_usd": 1.0, "mode": "report"},
+             # Sentence-level Jev tell tagger (core/jev_tells.py). On by default; without
+             # TYPESAFE_API_KEY only the two code checks run. The reviser is a separate switch.
+             "jev_tells": {"enabled": True, "page_words": 350, "min_severity": 1,
+                           "band": [0.4, 0.6], "reask": 1, "repeat_window": 6,
+                           "max_hits": 40, "cap_usd": 1.0}},
     # Post-draft screen (core/screen.py): code checks + Jev (TypeSafe System One, key TYPESAFE_API_KEY)
     # flag sections; the revise editor then reads only a revision packet. On by default; without
     # TYPESAFE_API_KEY the code checks still run and Jev is skipped. See README.

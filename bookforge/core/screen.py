@@ -296,6 +296,17 @@ def run(ctx, chapter: dict, text: str, crit: dict | None = None, step_dir: Path 
                               "beat": b, "beat_text": (ps.get("beats") or {}).get(b, "") if b else "",
                               "confidence": round(conf, 2), "opens": " ".join(s["text"].split()[:14])}
 
+    from bookforge.core.jev_tells import hits_for
+    for hit in hits_for(ctx, text):
+        sid = next((s["sid"] for s in sections if hit.get("span") and hit["span"] in s["text"]), None)
+        if not sid:
+            continue
+        flag = {"source": hit.get("source") or "code", "check": f"tell_{hit['category']}", "section": sid,
+                "severity": hit.get("severity"), "evidence": hit.get("span") or "", "detail": hit.get("fix") or ""}
+        if isinstance(hit.get("p"), (int, float)):
+            flag["p"] = hit["p"]
+        flags[sid].append(flag)
+
     located, cl = critique_flags(ctx, chapter, sections, crit, text)    # editor findings
     for f in located:
         rule_m = re.search(r"RULE ([A-Za-z0-9_]+)", f.get("detail") or "")

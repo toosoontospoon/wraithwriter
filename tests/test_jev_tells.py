@@ -1,9 +1,8 @@
 """Jev tell tagger: splitter, dialogue skip, hit rows, thresholds, page gates, cache."""
-import json
-
 import pytest
 
-from bookforge.core import jev, jev_tells
+from bookforge import config
+from bookforge.core import editor, jev, jev_tells, screen
 
 
 @pytest.fixture(autouse=True)
@@ -256,6 +255,66 @@ def test_uniform_rhythm_length_and_opening_word():
 
     quoted = ('"She left the house."\n\n"She locked the door."\n\n"She crossed the yard."\n\n"She fed the cat."')
     assert not any(h["category"] == "uniform_rhythm" for h in jev_tells.tag_text(quoted)["hits"])
+
+
+def _score_fake(category: str, p: float = 0.95):
+    def fake(state, qs, model):
+        ans = {}
+        for k, spec in qs.items():
+            if spec.get("type") == "choice":
+                ans[k] = {"type": "choice", "choice": "none", "probabilities": {"none": 1}, "confidence": 1}
+            else:
+                noul = p if "document" in state and k.startswith(f"{category}__") else 0.0
+                ans[k] = {"type": "noul", "noul": noul}
+        return {"model": model, "answers": ans, "usage": {"input_tokens": 5}}
+    jev.set_fake(fake)
+
+
+def test_findings_and_screen_carry_jev_tell_rows(project):
+    text = "Nia counted the dry nets on the wall."
+    ch = {"id": "ch01", "title": "Nets", "scenes": [{"scene_number": 1, "pov": "Nia"}]}
+    project.save_outline([ch])
+    project.save_characters([{"name": "Nia Cole"}])
+    project.save_world({})
+    chapter = project.chapter("ch01")
+    _score_fake("gesture_beat", 0.95)
+    lines = editor.findings(project, "ch01", {}, chapter, text)
+    assert any("RULE jev_gesture_beat" in ln and "dry nets" in ln for ln in lines)
+    pk = screen.run(project, chapter, text, {})
+    flags = [f for fl in pk["flags"].values() for f in fl if f.get("check") == "tell_gesture_beat"]
+    assert len(flags) == 1
+    assert flags[0]["source"] == "jev" and flags[0]["evidence"] == text
+    assert flags[0]["section"] == pk["sections"][0]["sid"]
+    assert flags[0]["p"] == 0.95 and flags[0]["severity"] == 3
+    assert text in pk["sections"][0]["text"]
+
+
+def test_disabled_jev_tells_add_nothing(project):
+    config.set_config({"llm": {"json_retries": 1}, "deai": {"jev_tells": {"enabled": False}},
+                       "screen": {"enabled": True, "section_words": 80}})
+    text = "She opened the door. She looked inside. She saw the table. She sat down."
+    ch = {"id": "ch01", "title": "T", "scenes": [{"scene_number": 1, "pov": "Nia"}]}
+    project.save_outline([ch])
+    project.save_characters([])
+    project.save_world({})
+    chapter = project.chapter("ch01")
+    seen = []
+
+    def fake(state, qs, model):
+        seen.append(state)
+        ans = {k: {"type": "noul", "noul": 0.0} for k, spec in qs.items() if spec.get("type") != "choice"}
+        for k, spec in qs.items():
+            if spec.get("type") == "choice":
+                ans[k] = {"type": "choice", "choice": "none", "probabilities": {"none": 1}, "confidence": 1}
+        return {"model": model, "answers": ans, "usage": {"input_tokens": 1}}
+
+    jev.set_fake(fake)
+    lines = editor.findings(project, "ch01", {}, chapter, text)
+    assert not any("jev_" in ln for ln in lines)
+    assert seen == []
+    pk = screen.run(project, chapter, text, {})
+    assert not any(str(f.get("check", "")).startswith("tell_") for fl in pk["flags"].values() for f in fl)
+    assert all("document" not in state for state in seen)
 
 
 def test_scene_break_is_its_own_paragraph_and_not_a_sentence():

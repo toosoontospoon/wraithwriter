@@ -632,6 +632,26 @@ def _finish(text: str, sents: list[dict], hits: list[dict], page_scores: list, r
             "counts": _counts(uniq, tax), "reasked": reasked, "jev": status}
 
 
+def project_log_dir(ctx):
+    """Shared cache directory so the screen and the editor tag a chapter once."""
+    state = getattr(ctx, "state_dir", None)
+    if not state:
+        return None
+    return Path(state) / "jev_tells"
+
+
+def hits_for(ctx, text: str) -> list[dict]:
+    """Located tell rows for ``text``, or nothing when the tagger is disabled."""
+    cfg = settings(None)
+    if not cfg.get("enabled", True) or not text or not str(text).strip():
+        return []
+    names = ctx.cast_names() if hasattr(ctx, "cast_names") else None
+    if names:
+        cfg = dict(cfg)
+        cfg["names"] = list(names)
+    return tag_text(text, cfg=cfg, log_dir=project_log_dir(ctx)).get("hits") or []
+
+
 def tag_text(text: str, cfg: dict | None = None, log_dir=None) -> dict:
     cfg = settings(cfg)
     tax = _apply_thresholds(load_taxonomy(), cfg)

@@ -116,6 +116,7 @@ Flags:
 | `deai.max_tell_drop` | 0.5 | How far the 0-10 detector score may fall before the guard acts |
 | `deai.rewrite_residual` | false | After the editor, rewrite paragraphs that still have a severity >= 2 narration hit, then re-scrub. The duties-gate rollback still applies. Off adds no LLM call |
 | `deai.external_detector` | `provider: none` | Report-only hook after the final scrub. `pangram` reads the env var named by `api_key_env` (default `PANGRAM_API_KEY`) and records `skipped: no key` when it is unset. It never edits the chapter and never logs the key |
+| `deai.jev_tells` | `{enabled: true, page_words: 350, min_severity: 1, band: [0.4, 0.6], reask: 1, repeat_window: 6, max_hits: 40, cap_usd: 1.0}` | Per-sentence Jev tell tagger, plus uniform-rhythm and repeated-action code checks. Without `TYPESAFE_API_KEY` only the code checks run |
 | `screen.enabled` | true | Code checks still run without `TYPESAFE_API_KEY`. Jev is skipped cleanly |
 | `screen.deai_questions` | true | The six de-AI questions on the existing per-section Jev call |
 

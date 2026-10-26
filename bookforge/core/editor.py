@@ -41,10 +41,19 @@ def _format_located(hit: dict) -> str:
             f'RULE {hit["rule"]} AT "{ev}" FIX: {fix}')
 
 
+def _same_spot(hit: dict, row: dict) -> bool:
+    if hit.get("para") != row.get("para"):
+        return False
+    span = (hit.get("span") or "").strip()
+    other = (row.get("span") or "").strip()
+    return bool(span and other and (span in other or other in span))
+
+
 def _located_lines(ctx, text: str) -> list[str]:
     if not text or not text.strip():
         return []
     from bookforge.core.deai import located_hits
+    from bookforge.core.jev_tells import hits_for
     names = ctx.cast_names() if hasattr(ctx, "cast_names") else None
     allow = None
     style = getattr(ctx, "style", None)
@@ -53,7 +62,13 @@ def _located_lines(ctx, text: str) -> list[str]:
             allow = style().allowlist()
         except Exception:
             allow = None
-    return [_format_located(h) for h in located_hits(text, names, allow)]
+    rows = located_hits(text, names, allow)
+    lines = [_format_located(h) for h in rows]
+    for hit in hits_for(ctx, text):
+        if any(_same_spot(hit, row) for row in rows):
+            continue
+        lines.append(_format_located(hit))
+    return lines
 
 
 def findings(ctx, chapter_id: str, crit: dict, chapter: dict | None = None, text: str | None = None) -> list[str]:
