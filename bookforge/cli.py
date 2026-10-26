@@ -368,12 +368,15 @@ def tells_revise(file_, out_):
     """Run the per-category reviser on a file. Explicit opt-in, even when config has it off."""
     import tempfile
 
-    from bookforge.core import jev_revise
+    from bookforge.core import jev, jev_revise, llm
     text = Path(file_).read_text()
-    new, rep = jev_revise.revise(text, log_dir=Path(tempfile.mkdtemp(prefix="jev-revise-")), force=True)
+    log_dir = Path(tempfile.mkdtemp(prefix="jev-revise-"))
+    writer_before = llm.spent()
+    new, rep = jev_revise.revise(text, log_dir=log_dir, force=True)
     Path(out_).write_text(new)
     click.echo(f"wrote {out_}  jev {rep.get('jev')}  rounds {rep.get('rounds')}  "
-               f"kept {len(rep.get('kept') or [])}  words_cut {rep.get('words_cut')}")
+               f"kept {len(rep.get('kept') or [])}  words_cut {rep.get('words_cut')}  "
+               f"spend jev ${jev.spent(log_dir):.4f} writer ${llm.spent() - writer_before:.4f}")
     for row in rep.get("rejected") or []:
         click.echo(f"  rejected {row.get('id') or row.get('category') or ''} {row.get('reason')}")
 
