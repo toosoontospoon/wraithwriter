@@ -7,11 +7,15 @@ Does not invent wording: only replaces/strips known mechanical tokens.
 ``mode="prose"`` (the default, and the CLI default) is the upstream scrubber:
 its output is byte-identical to the canonical token-scrub script.
 
-``mode="fiction"`` is a local patch for narrative prose. Em/en dashes (and the
-other dash-like codepoints) follow fiction punctuation instead of becoming
-". ", then the remaining upstream token classes run. Fiction mode never
-applies the upstream dash-to-period substitution, which breaks dialogue
-("Wait. " she said.) and leaves a lowercase word after a period.
+``mode="fiction"`` is a local patch for narrative prose. Em/en dashes follow
+fiction punctuation instead of becoming ". ": a dash before a closing quote
+becomes "...", a dash right after an opening quote is removed, a line-end
+dash becomes ".", and any other em/en dash becomes ", ". A tight figure dash,
+horizontal bar, or minus sign between word characters becomes an ASCII hyphen
+(the upstream join). Spaced forms of those marks become ", ", never ". ".
+The remaining upstream token classes then run. Fiction mode never applies the
+upstream dash-to-period substitution, which breaks dialogue ("Wait. " she said.)
+and leaves a lowercase word after a period.
 """
 from __future__ import annotations
 
@@ -51,10 +55,15 @@ TELLS = {
     "zwj": "\u200d",
     "bom": "\ufeff",
 }
-# Every dash-like codepoint fiction mode rewrites with the fiction rules,
-# so none of them fall through to the upstream ". " substitution.
+# Every dash-like codepoint fiction mode rewrites, so none of them fall
+# through to the upstream ". " substitution.
 _FICTION_DASH = "".join(DASHES)
 _QUOTES = "\"'\u201c\u201d\u2018\u2019\u201e\u201a\u00ab\u00bb"
+# English-direction marks. Straight quotes are open or close by parity.
+# Low-9 marks and guillemets have one direction.
+_OPEN_QUOTES = set("\u201c\u2018\u00ab\u201e\u201a")
+_CLOSE_QUOTES = set("\u201d\u2019\u00bb")
+_STRAIGHT_QUOTES = set("\"'")
 
 
 @dataclass
@@ -148,15 +157,50 @@ def _scrub_prose(text: str) -> tuple[str, Report]:
     return out, r
 
 
+def _straight_quote_parity(text: str, index: int) -> str:
+    """'open' or 'close' for a straight quote. Odd count so far means close."""
+    ch = text[index]
+    return "close" if text.count(ch, 0, index) % 2 else "open"
+
+
+def _is_closing_quote(text: str, index: int) -> bool:
+    """True when the quote at index ends a quotation (dash before it -> ...)."""
+    if index < 0 or index >= len(text):
+        return False
+    ch = text[index]
+    if ch in _CLOSE_QUOTES:
+        return True
+    if ch in _OPEN_QUOTES or ch not in _STRAIGHT_QUOTES:
+        return False
+    return _straight_quote_parity(text, index) == "close"
+
+
+def _is_opening_quote(text: str, index: int) -> bool:
+    """True when the quote at index starts a quotation (dash after it is cut)."""
+    if index < 0 or index >= len(text):
+        return False
+    ch = text[index]
+    if ch in _OPEN_QUOTES:
+        return True
+    if ch in _CLOSE_QUOTES or ch not in _STRAIGHT_QUOTES:
+        return False
+    return _straight_quote_parity(text, index) == "open"
+
+
 def _fiction_dashes(text: str, r: Report) -> str:
     """Fiction dash policy, applied before any other token class.
 
     - number ranges (10–12) become 10-12
     - a dash before a closing quote becomes ...
     - a dash right after an opening quote is removed
+    - a dash before an opening quote, or after a closing quote, is an ordinary
+      dash and becomes ", " (not an ellipsis, and not deleted)
     - a dash at end of line becomes .
     - "--" becomes ", "
-    - any other em/en/figure/horizontal/minus dash, tight or spaced, becomes ", "
+    - a tight figure dash, horizontal bar, or minus between word characters
+      becomes an ASCII hyphen
+    - any other em/en dash, tight or spaced, becomes ", "
+    - spaced figure dash, horizontal bar, and minus also become ", ", never ". "
     """
     out = text
     range_pat = re.compile(rf"(\d)\s*[{_FICTION_DASH}]\s*(\d)")
@@ -166,16 +210,32 @@ def _fiction_dashes(text: str, r: Report) -> str:
         r.add("number_range", n)
 
     before_q = re.compile(rf"\s*[{_FICTION_DASH}]+\s*(?=[{_QUOTES}])")
-    n = len(before_q.findall(out))
-    if n:
-        out = before_q.sub("...", out)
-        r.add("dash_before_close_quote", n)
+    n_close = 0
+
+    def _before_close(m: re.Match) -> str:
+        nonlocal n_close
+        if _is_closing_quote(out, m.end()):
+            n_close += 1
+            return "..."
+        return m.group(0)
+
+    out = before_q.sub(_before_close, out)
+    if n_close:
+        r.add("dash_before_close_quote", n_close)
 
     after_q = re.compile(rf"(?<=[{_QUOTES}])\s*[{_FICTION_DASH}]+\s*")
-    n = len(after_q.findall(out))
-    if n:
-        out = after_q.sub("", out)
-        r.add("dash_after_open_quote", n)
+    n_open = 0
+
+    def _after_open(m: re.Match) -> str:
+        nonlocal n_open
+        if _is_opening_quote(out, m.start() - 1):
+            n_open += 1
+            return ""
+        return m.group(0)
+
+    out = after_q.sub(_after_open, out)
+    if n_open:
+        r.add("dash_after_open_quote", n_open)
 
     line_end = re.compile(rf"\s*[{_FICTION_DASH}]+\s*$", re.M)
     n = len(line_end.findall(out))
@@ -188,6 +248,19 @@ def _fiction_dashes(text: str, r: Report) -> str:
     if n:
         out = hy.sub(", ", out)
         r.add("double_hyphen", n)
+
+    # Upstream token classes: tight figure / horizontal bar / minus -> hyphen.
+    # Em/en between words stay comma joins below.
+    for name, ch in (
+        ("figure_dash_hyphen", FIG_DASH),
+        ("horizontal_bar_hyphen", HORIZ_BAR),
+        ("minus_sign_hyphen", MINUS),
+    ):
+        pat = re.compile(rf"(?<=\w){re.escape(ch)}(?=\w)")
+        n = len(pat.findall(out))
+        if n:
+            out = pat.sub("-", out)
+            r.add(name, n)
 
     for name, ch in (
         ("em_dash", EM),
