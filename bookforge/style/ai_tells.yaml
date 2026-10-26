@@ -343,6 +343,28 @@
   where: narration
   fix: Verbless sentence fragment in narration. Make it a complete sentence unless it is a deliberate rare beat.
 
+- id: polished_intro
+  category: scene_shape
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Polished thesis opener. Start the chapter or scene inside a concrete moment, action, line of dialogue, or sensory detail. Do not open by defining or summarising the place.
+
+- id: parallel_list_ending
+  category: scene_shape
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Tidy parallel-list ending. Close on an action, an image, or a line of dialogue. Do not end on anaphora, an "N things" list, or a tricolon summary.
+
+- id: soft_contrast
+  category: contrast_frame
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: [', not \w+', '\brather than\b', '\binstead of\b']
+  fix: Soft contrast ("X, not Y", "rather than X, Y", or "instead of X, Y"). State the thing directly and drop the rejected alternative.
+
 - id: stock_names
   category: names
   kind: word

@@ -194,6 +194,119 @@ _EXPLAIN = re.compile(r"\b(because|as if|as though|which meant|the way (she|he|t
 _EMO = re.compile(r"\b(fear|anger|grief|shame|guilt|relief|love|hope|sadness|joy|dread|longing|jealousy|pride|"
                   r"embarrass\w*|afraid|angry|ashamed|guilty|relieved|hurt|lonely)\b", re.I)
 _TRIPLE = re.compile(r"\b[\w' -]{2,30}, [\w' -]{2,30},? and [\w' -]{2,30}[.,!?]", re.I)
+_THESIS_OPEN = re.compile(
+    r"\b(?:was|is|were|are) the kind of\b"
+    r"|\b(?:is|was|were) a place\b"
+    r"|\bthere are (?:two|three|four|five|six|seven|eight|nine|ten|\d+) kinds\b"
+    r"|\b(?:are|were) built on\b"
+    r"|\bthe routine (?:is|was)\b",
+    re.I)
+_COPULA_FIRST = re.compile(
+    r"^(?:there (?:are|were|is|was)\b|(?:[A-Z][\w']*(?:\s+[A-Z][\w']*){0,4}\s+)(?:is|was|were|are)\b)")
+_CONCRETE_ACTION = re.compile(
+    r"\b(?:pulled|grabbed|seized|ran|walked|opened|closed|shut|slammed|threw|caught|held|"
+    r"lifted|dropped|stepped|turned|looked|glanced|said|asked|shouted|whispered|took|put|"
+    r"picked|pushed|climbed|sat|stood|knelt|reached|struck|hit|cut|poured|lit|broke|fell|"
+    r"drove|rowed|wrote|read|ate|drank|woke|knocked|locked|fired|aimed|ducked|checked|"
+    r"checks|stirred|worked|handed|gave|set|wiped|swore|yanked|hauled|dragged|kicked|"
+    r"leaned|crossed|entered|left|watched|listened|tied|shoved|slid|went|came|started|"
+    r"stopped|called|answered|nodded|shook|carried|brought|sent|kept|let|made|told|found|"
+    r"puts|put|drives|drove|runs|ran)\b",
+    re.I)
+_LIST_PREAMBLE = re.compile(
+    r"\b(?:two|three|four|five|six|seven|eight|nine|ten|\d+)\s+"
+    r"(?:things|reasons|habits|rules|ways|kinds)\b",
+    re.I)
+_SCENE_MARK = re.compile(r"\s*(?:\* \* \*|={3,}|#+.*)\s*")
+
+
+def _narration_sentences(p: str) -> list[str]:
+    nar = _mask_dialogue(p)
+    return [s.strip() for s in _SENT.split(nar.strip()) if s.strip() and _WORD.findall(s)]
+
+
+def _low_len_variance(sents: list[str]) -> bool:
+    counts = [len(_WORD.findall(s)) for s in sents]
+    if len(counts) < 2:
+        return False
+    mean = sum(counts) / len(counts)
+    if mean < 4:
+        return False
+    var = sum((c - mean) ** 2 for c in counts) / len(counts)
+    return (var ** 0.5) / mean <= 0.35
+
+
+def polished_intro_evidence(p: str) -> str | None:
+    """First paragraph of a chapter or scene that opens as a thesis, definition, or summary.
+
+    A hit needs no dialogue, and either a thesis pattern ("was the kind of", "is a place",
+    "there are two kinds", "the routine is") or a copula definition in sentence 1 with no
+    concrete action there and low sentence-length variance.
+    """
+    if not p or _SCENE_MARK.fullmatch(p) or '"' in p or "\u201c" in p:
+        return None
+    sents = _narration_sentences(p)
+    if not sents:
+        return None
+    first = sents[0]
+    if _THESIS_OPEN.search(p):
+        return first[:180]
+    if (_COPULA_FIRST.match(first) and not _CONCRETE_ACTION.search(first)
+            and len(sents) >= 2 and _low_len_variance(sents)):
+        return first[:180]
+    return None
+
+
+def _opening_word(s: str) -> str:
+    m = re.match(r"[\s\"']*([A-Za-z']+)", s)
+    return m.group(1).lower() if m else ""
+
+
+def _closing_tricolon(s: str) -> bool:
+    m = re.match(r"^(.+?), (.+?), and (.+?)\.$", s.strip())
+    if not m:
+        return False
+    parts = m.groups()
+    if any("," in part for part in parts[:2]):
+        return False
+    counts = [len(_WORD.findall(part)) for part in parts]
+    return all(2 <= c <= 12 for c in counts)
+
+
+def parallel_list_ending_evidence(p: str) -> str | None:
+    """Last paragraph of a scene or chapter that closes as a tidy parallel list.
+
+    Hits: three or more consecutive short sentences with the same opening word; an
+    "N things/reasons/habits" preamble followed by short same-shaped sentences; or a
+    closing tricolon summary.
+    """
+    if not p or _SCENE_MARK.fullmatch(p) or p.count('"') >= 2 or "\u201c" in p:
+        return None
+    sents = _narration_sentences(p)
+    if not sents:
+        return None
+    return _parallel_list_match(sents)
+
+
+def _parallel_list_match(sents: list[str]) -> str | None:
+    words = [_opening_word(s) for s in sents]
+    run_at = 0
+    for i in range(1, len(words) + 1):
+        if i < len(words) and words[i] and words[i] == words[run_at] and len(words[i]) >= 2:
+            continue
+        length = i - run_at
+        chunk = sents[run_at:i]
+        if length >= 3 and all(len(_WORD.findall(s)) <= 16 for s in chunk):
+            return " ".join(chunk)[:180]
+        run_at = i
+    if _LIST_PREAMBLE.search(sents[0]) and len(sents) >= 4:
+        rest = sents[1:]
+        counts = [len(_WORD.findall(s)) for s in rest]
+        if len(rest) >= 3 and max(counts) <= 12 and max(counts) - min(counts) <= 5:
+            return " ".join(sents)[:180]
+    if _closing_tricolon(sents[-1]):
+        return sents[-1][:180]
+    return None
 
 
 def _structural(paras: list[str], rules: dict, scene_ends: set[int], scene_starts: set[int]) -> list[dict]:
@@ -249,6 +362,18 @@ def _structural(paras: list[str], rules: dict, scene_ends: set[int], scene_start
             if len(senses) >= 3:
                 out.append(_hit(R["sensory_list_opening"], i, 0, min(len(p), 100), p,
                                 f"opening sense catalog: {sorted(senses)}"))
+        if "polished_intro" in R and i in scene_starts:
+            ev = polished_intro_evidence(p)
+            if ev:
+                st = p.find(ev[:40])
+                out.append(_hit(R["polished_intro"], i, max(0, st), max(0, st) + len(ev), p,
+                                f"polished intro: '{ev[:70]}'"))
+        if "parallel_list_ending" in R and i in scene_ends:
+            ev = parallel_list_ending_evidence(p)
+            if ev:
+                st = p.find(ev[:40])
+                out.append(_hit(R["parallel_list_ending"], i, max(0, st), max(0, st) + len(ev), p,
+                                f"parallel-list ending: '{ev[:70]}'"))
     if "one_line_punch" in R and len(paras) >= 6:
         ratio = len(one_liners) / len(paras)
         per_1k = len(one_liners) * 1000 / words_total

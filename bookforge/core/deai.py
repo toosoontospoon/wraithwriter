@@ -6,9 +6,43 @@ from pathlib import Path
 
 STYLE_DIR = Path(__file__).resolve().parent.parent / "style"
 
+# Fiction overrides the email register in the vendored skill. Quoted dialogue may
+# break the banlist and the fragment budget; narration may not.
+FICTION_NOTE = (
+    "FICTION: The style bible's narrator voice overrides any email register. "
+    "Do not add a human-slip texture rule. "
+    "Banned words and sentence fragments are allowed inside quoted character dialogue."
+)
+
+# Cache-stable summary of rules_text(). Kept under ~700 tokens so it can sit in the
+# book-wide system prefix. Byte-for-byte the same for every call in a book.
+PROSE_RULES = """PROSE RULES:
+Narration follows the style bible's narrator voice. That voice overrides any email register. Do not add a human-slip texture rule. Quoted character dialogue may use banned words and fragments; narration may not.
+- Banlist: no skill-banlist words or assistant phrases in narration.
+- Complete sentences in narration, at least 98 percent with a subject and a finite verb.
+- Clear referents and clear agency. Who does what to whom. No hedge stacks.
+- No rule of three, no mirrored pairs, no "not X but Y", no soft "X, not Y" or "rather than X, Y".
+- No polished thesis-style chapter or scene opener. Start inside a concrete moment.
+- No tidy parallel-list or tricolon ending. End on an action, an image, or a line.
+- Straight quotes. No em dashes or en dashes."""
+
 
 def rules_text() -> str:
-    return (STYLE_DIR / "deai_rules.md").read_text()
+    """deai_rules.md, the vendored skill extract, and the fiction note."""
+    parts = [
+        (STYLE_DIR / "deai_rules.md").read_text().strip(),
+        (STYLE_DIR / "vendor" / "de-ai-revision" / "rules_extract.md").read_text().strip(),
+        FICTION_NOTE,
+    ]
+    return "\n\n".join(parts) + "\n"
+
+
+def prose_rules_block() -> str:
+    """Compact PROSE RULES for the cached system prefix. Empty when the flag is off."""
+    from bookforge.config import load_config
+    if not (load_config().get("deai") or {}).get("prompt_rules", True):
+        return ""
+    return PROSE_RULES
 
 
 def banned_words() -> list[str]:
@@ -119,6 +153,87 @@ def lint_paragraph(p: str, names: list[str] | None = None, prev: str = "") -> li
     return issues
 
 
+_LINT_SEV = {"not_x_but_y": 3, "stock_word": 2, "unclear_referent": 2, "fragment": 1}
+_SOFT_RULES = {"polished_intro", "parallel_list_ending", "soft_contrast"}
+
+
+def _in_dialogue(paragraph: str, start: int) -> bool:
+    return paragraph[:max(0, start)].count('"') % 2 == 1
+
+
+def _para_scenes(paras: list[str]) -> list[int]:
+    scene = 1
+    out = []
+    for p in paras:
+        out.append(scene)
+        if re.fullmatch(r"\s*(\* \* \*|={3,}|#+.*)\s*", p or ""):
+            scene += 1
+    return out
+
+
+def located_hits(text: str, names: list[str] | None = None, allow: list[str] | None = None,
+                 min_severity: int | None = None) -> list[dict]:
+    """Detector and lint hits at or above ``deai.min_severity``, narration-only for dialogue.
+
+    Each row is a located finding: scene, paragraph index, evidence span, rule id, fix.
+    Capped at ``deai.max_findings`` (default 40). Empty when ``deai.route_to_editor`` is false.
+    Em-dash hits are omitted; the scrubber removes those.
+    """
+    from bookforge.core import detector
+    cfg = _deai_cfg()
+    if not cfg.get("route_to_editor", True):
+        return []
+    min_sev = int(cfg.get("min_severity", 2) if min_severity is None else min_severity)
+    cap = int(cfg.get("max_findings", 40))
+    norm = text.translate(_QMAP)
+    rep = detector.detect(text, allow, names)
+    paras = detector.split_paragraphs(norm)
+    scenes = _para_scenes(paras)
+    rows, seen = [], set()
+    for h in rep["hits"]:
+        if h["severity"] < min_sev or h["rule"] == "em_dash":
+            continue
+        para = paras[h["para"]] if 0 <= h["para"] < len(paras) else ""
+        if para and _in_dialogue(para, h.get("start", 0)):
+            continue
+        key = (h["para"], h["rule"], (h.get("span") or "").lower())
+        if key in seen:
+            continue
+        seen.add(key)
+        rows.append({
+            "rule": h["rule"], "severity": h["severity"], "para": h["para"],
+            "scene": scenes[h["para"]] if h["para"] < len(scenes) else 1,
+            "span": (h.get("span") or "")[:120], "reason": h.get("reason") or h["rule"],
+            "fix": h.get("fix") or "", "paragraph": para,
+            "confirm": h["rule"] in _SOFT_RULES,
+        })
+    for i, p in enumerate(paras):
+        if re.fullmatch(r"\s*(\* \* \*|={3,}|#+.*)\s*", p or ""):
+            continue
+        prev = paras[i - 1] if i else ""
+        for issue in lint_paragraph(p, names, prev):
+            sev = _LINT_SEV.get(issue["rule"], 1)
+            if sev < min_sev or issue["rule"] == "token":
+                continue
+            if any(r["para"] == i and (r["rule"] == issue["rule"] or issue["detail"].lower() in r["span"].lower())
+                   for r in rows):
+                continue
+            detail = issue["detail"][:120]
+            key = (i, issue["rule"], detail.lower())
+            if key in seen:
+                continue
+            seen.add(key)
+            rows.append({
+                "rule": issue["rule"], "severity": sev, "para": i,
+                "scene": scenes[i] if i < len(scenes) else 1,
+                "span": detail, "reason": f"{issue['rule']}: {detail}",
+                "fix": "Fix this narration tell. Leave quoted dialogue alone.",
+                "paragraph": p, "confirm": False,
+            })
+    rows.sort(key=lambda r: (-r["severity"], r["para"], r["rule"]))
+    return rows[:cap]
+
+
 def lint(text: str, names: list[str] | None = None) -> dict:
     paras = split_paragraphs(text)
     flagged, counts = [], {}
@@ -171,12 +286,15 @@ def _similar(a: str, b: str, thr: float = 0.8) -> bool:
 
 
 def rewrite_flagged(text: str, names: list[str] | None = None, llm=None, persona: str = "",
-                    allow: list[str] | None = None, voice_notes: str = "", max_loops: int | None = None
+                    allow: list[str] | None = None, voice_notes: str = "", max_loops: int | None = None,
+                    severe_only: bool = False,
                     ) -> tuple[str, dict]:
     """Anti-AI pass. Stage A: deterministic detector + safe autofix (token scrub).
     Stage B: cheap LLM rewrites ONLY paragraphs that need it, with per-flag instructions;
     re-detect and loop (max ``deai.max_loops``, default 2). A rewrite is kept only if it lowers
-    that paragraph's weighted tell count and keeps length within bounds."""
+    that paragraph's weighted tell count and keeps length within bounds.
+    ``severe_only`` (the residual path) rewrites just paragraphs that still have a
+    severity >= min_severity narration hit, excluding em dashes."""
     from bookforge.core import detector
     from bookforge.core.llm import llm_call
     llm = llm or llm_call
@@ -202,7 +320,11 @@ def rewrite_flagged(text: str, names: list[str] | None = None, llm=None, persona
             hs = det["flagged_paragraphs"].get(j, [])
             legacy = [x for x in lint_paragraph(paras[i], names, paras[i - 1] if i else "")
                       if x["rule"] not in ("token", "fragment")]
-            if (hs and detector.needs_rewrite(hs, min_sev, cluster)) or legacy:
+            if severe_only:
+                keep = [h for h in hs if h["severity"] >= min_sev and h["rule"] != "em_dash"]
+                if keep:
+                    todo.append((i, keep, []))
+            elif (hs and detector.needs_rewrite(hs, min_sev, cluster)) or legacy:
                 todo.append((i, hs, legacy))
         if not todo:
             break

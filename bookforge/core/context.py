@@ -178,33 +178,21 @@ class BookContext:
 
     # ------------------------------------------------------------------ stable prefix (cacheable)
     def stable_prefix(self) -> str:
-        """Same bytes for every call in a book, so provider prompt caches hit."""
-        persona = self.get_persona()
-        chars = self.load_characters()
-        world = self.load_world()
-        outline = self.load_outline()
-        cast = []
-        for c in chars.values():
-            cast.append(f"- {c['name']} [{c['id']}] ({c['role']}, age {c.get('age') or '?'}): "
-                        f"{c.get('personality', '')} Wants: {c.get('motivation', '')}. "
-                        f"Arc: {c.get('arc', '')}. Voice: {c.get('voice', '')}"
-                        + (f" Aliases: {', '.join(c['aliases'])}." if c.get("aliases") else ""))
-        rules = "\n".join(f"- {r}" for r in world.get("core_rules", []))
-        flags = "\n".join(f"- {r}" for r in world.get("consistency_flags", []))
-        locs = "\n".join(f"- {l['name']} [{l['id']}]: {l.get('description', '')[:300]}"
-                         for l in world.get("key_locations", []))
-        plan = "\n".join(f"- {c['id']} {c['title']}: {c.get('summary', '')}" for c in outline)
+        """Book-stable system prefix: the same prose prompt the writer caches, plus world rules.
+
+        Wired to ``pack.system_for`` (persona, rule card, prose rules, story pack) so this is
+        not a dead copy of the old cast dump. The style-bible drafter block and the saved
+        world rules follow. Byte-stable for a given book. Truncated to the prefix budget.
+        """
+        from bookforge.core import pack
+        parts = [pack.system_for(self)]
         sb = self.style().block(int(load_config().get("style", {}).get("prefix_tokens", 2500)))
-        prefix = (
-            (persona + "\n\n" if persona else "")
-            + (sb + "\n\n" if sb else "")
-            + "STYLE RULES (always obey):\n" + deai.rules_text()
-            + "\n\nCAST BIBLE (use these names exactly; do not invent named characters unless the beat requires it):\n"
-            + "\n".join(cast)
-            + f"\n\nWORLD: {world.get('genre_tone', '')}\nRULES:\n{rules}\nNEVER/ALWAYS:\n{flags}\nLOCATIONS:\n{locs}"
-            + f"\n\nBOOK PLAN:\n{plan}"
-        )
-        return truncate_tokens(prefix, 12000)
+        if sb:
+            parts.append(sb)
+        rules = [r for r in (self.load_world().get("core_rules") or []) if r]
+        if rules:
+            parts.append("WORLD RULES:\n" + "\n".join(f"- {r}" for r in rules))
+        return truncate_tokens("\n\n".join(parts), 12000)
 
     # ------------------------------------------------------------------ volatile context
     def get_scene_context(self, chapter: dict, scene: dict, beats: list[str], story_so_far: str,
