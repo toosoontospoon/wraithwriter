@@ -14,6 +14,108 @@ import yaml
 
 STYLE_DIR = Path(__file__).resolve().parent.parent / "style"
 _QUOTE = re.compile(r'"[^"\n]*"')
+_FIGURATIVE_LANDSCAPE = (
+    r"\b(?:the|a|an|this|that|our|their|its|his|her)\s+(?:political|digital|emotional|media|"
+    r"business|economic|cultural|social|competitive|regulatory|technological|corporate|financial|"
+    r"moral|strategic|mental|psychological|intellectual|ideological|geopolitical|legal|educational|"
+    r"global|national|industrial|healthcare)\s+landscape\b",
+    r"\blandscape of (?:the |a |an )?(?:power|grief|fear|opportunity|possibility|ideas|idea|change|"
+    r"meaning|identity|politics|emotion|emotions|discourse|control|influence|memory|desire|"
+    r"uncertainty|choice|trust|conflict|innovation|technology|data|opinion|thought|knowledge|risk|"
+    r"competition|culture|society|ambition|success|failure|progress|experience|policy|commerce|"
+    r"finance|information|security|privacy|attention|narrative|morality|ethics)\b",
+)
+_LEVERAGE_VERB = (
+    r"\b(?:leveraged|leveraging|leverages)\b",
+    r"\b(?:to|can|will|we|they)\s+leverage\b",
+)
+
+
+def _bounded_pattern(term: str) -> str:
+    """Case-insensitive phrase pattern. A trailing word-boundary after punctuation never matches."""
+    esc = re.escape(term)
+    pre = r"\b" if term[:1].isalnum() else ""
+    post = r"\b" if term[-1:].isalnum() else ""
+    return pre + esc + post
+
+
+def _banlist_rows() -> list[tuple[str, str, str]]:
+    path = STYLE_DIR / "generated" / "deai_skill_banlist.txt"
+    rows = []
+    if not path.exists():
+        return rows
+    for line in path.read_text().splitlines():
+        line = line.strip()
+        if not line or line.startswith("GENERATED") or line.startswith("#"):
+            continue
+        kind, rest = line.split(None, 1)
+        qual = ""
+        if kind == "word":
+            parts = rest.rsplit(None, 1)
+            if len(parts) == 2 and parts[1] in ("figurative", "verb"):
+                rest, qual = parts
+        rows.append((kind, rest, qual))
+    return rows
+
+
+def _skill_banlist_rules() -> list[dict]:
+    """Generated skill banlist. Words are severity 2; assistant phrases are severity 3.
+    landscape is figurative-only and leverage is verb-only. Narration only."""
+    words, extra, phrases = [], [], []
+    for kind, term, qual in _banlist_rows():
+        if kind == "phrase":
+            phrases.append(term)
+        elif qual == "figurative" and term.lower() == "landscape":
+            extra.extend(_FIGURATIVE_LANDSCAPE)
+        elif qual == "verb" and term.lower() == "leverage":
+            extra.extend(_LEVERAGE_VERB)
+        else:
+            words.append(term)
+    rules = []
+    if words or extra:
+        patterns = []
+        if words:
+            patterns.append(r"\b(?:" + "|".join(re.escape(w) for w in sorted(set(words), key=len, reverse=True)) + r")\b")
+        patterns.extend(extra)
+        rules.append({
+            "id": "skill_banlist", "category": "word_choice", "kind": "regex", "severity": 2,
+            "where": "narration", "patterns": patterns,
+            "fix": "Banned word in narration (skill banlist). Use a plain, specific word.",
+            "_rx": [re.compile(p, re.I) for p in patterns],
+        })
+    if phrases:
+        patterns = [_bounded_pattern(p) for p in phrases]
+        rules.append({
+            "id": "skill_banlist", "category": "stock_phrase", "kind": "regex", "severity": 3,
+            "where": "narration", "patterns": patterns,
+            "fix": "Assistant phrase in narration (skill banlist). Delete it.",
+            "_rx": [re.compile(p, re.I) for p in patterns],
+        })
+    return rules
+
+
+def _fragment_max_ratio() -> float:
+    from bookforge.config import load_config
+    try:
+        return float((load_config().get("deai") or {}).get("fragment_max_ratio", 0.02))
+    except (TypeError, ValueError):
+        return 0.02
+
+
+def narration_fragment_ratio(paras: list[str]) -> tuple[float, int, int]:
+    """Narration fragments over narration sentences. Quoted dialogue is not counted."""
+    frag = sent = 0
+    for p in paras:
+        nar = _mask_dialogue(p)
+        for s in _SENT.split(nar.strip()):
+            if not s.strip() or not _WORD.findall(s):
+                continue
+            sent += 1
+            if len(_WORD.findall(s)) <= 6 and not _VERBISH.search(s):
+                frag += 1
+    return (frag / sent if sent else 0.0), frag, sent
+
+
 _QMAP = str.maketrans({"\u201c": '"', "\u201d": '"', "\u201e": '"', "\u2018": "'", "\u2019": "'"})
 _SENT = re.compile(r"(?<!\bSt\.)(?<!\bMr\.)(?<!\bDr\.)(?<!\bMt\.)(?<!\bMrs\.)(?<!\bMs\.)(?<=[.!?])\s+")
 _WORD = re.compile(r"[A-Za-z']+")
@@ -42,10 +144,12 @@ def load_catalog(path: str | None = None) -> list[dict]:
     if bulk.exists() and not path:
         phr = [l.strip() for l in bulk.read_text().splitlines() if l.strip() and not l.startswith("#")]
         rules.append({"id": "antislop_phrase", "category": "stock_phrase", "kind": "phrase", "severity": 1,
-                      "where": "any", "patterns": phr,
+                      "where": "narration", "patterns": phr,
                       "fix": "Common LLM-fiction phrase (antislop list). Rephrase in fresher, specific words.",
                       "_rx": [re.compile(r"\b(" + "|".join(re.escape(x) for x in sorted(phr, key=len, reverse=True))
                                          + r")\b", re.I)]})
+    if not path:
+        rules.extend(_skill_banlist_rules())
     return rules
 
 
@@ -248,6 +352,8 @@ def detect(text: str, allow: list[str] | None = None, known_names: list[str] | N
             continue
         seen.add(key)
         dedup.append(h)
+    ratio, _nfrag, _nsent = narration_fragment_ratio(paras)
+    flags = ["fragment_budget"] if _nsent and ratio > _fragment_max_ratio() else []
     words = max(1, len(text.split()))
     counts, by_cat, weighted = {}, {}, 0.0
     for h in dedup:
@@ -262,7 +368,8 @@ def detect(text: str, allow: list[str] | None = None, known_names: list[str] | N
     return {"words": words, "paragraphs": len(paras), "hits": dedup, "flagged_paragraphs": flagged,
             "counts": counts, "by_category": by_cat,
             "per_1k": {k: round(v * 1000 / words, 2) for k, v in counts.items()},
-            "weighted_per_1k": round(density, 2), "score": score_from_density(score_density)}
+            "weighted_per_1k": round(density, 2), "score": score_from_density(score_density),
+            "fragment_ratio": ratio, "flags": flags}
 
 
 def score_from_density(d: float) -> float:
@@ -306,6 +413,31 @@ def autofix(text: str) -> tuple[str, list[str]]:
                 applied.append(r["id"])
                 out = o2
     return out, applied
+
+
+def family_summary(rep: dict, text: str) -> str:
+    """Short per-family counts for ``bookforge detect --fail-on``."""
+    from bookforge.core.deai import count_token_tells
+    buckets = {"word choice": 0, "stock phrases": 0, "grammar tells": 0, "sentences": 0, "tokens": 0}
+    phrase = {"stock_phrase", "therapy_speak", "body_cliche", "sensory_cliche", "dialogue_tag"}
+    grammar = {"contrast_frame", "filler", "emotion_telling", "cadence"}
+    for h in rep["hits"]:
+        if h["rule"] in ("fragment", "fragment_budget"):
+            buckets["sentences"] += 1
+        elif h["category"] in ("lexicon", "names", "word_choice"):
+            buckets["word choice"] += 1
+        elif h["category"] in phrase:
+            buckets["stock phrases"] += 1
+        elif h["category"] in grammar:
+            buckets["grammar tells"] += 1
+        elif h["category"] in ("structure", "scene_shape"):
+            buckets["sentences"] += 1
+        elif h["category"] == "punctuation":
+            buckets["tokens"] += 1
+    if "fragment_budget" in rep.get("flags", []):
+        buckets["sentences"] += 1
+    buckets["tokens"] += sum(count_token_tells(text).values())
+    return "\n".join(f"{name}: {buckets[name]}" for name in buckets)
 
 
 def format_report(rep: dict, text: str | None = None, max_hits: int = 40) -> str:
