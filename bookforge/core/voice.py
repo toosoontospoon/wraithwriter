@@ -82,8 +82,9 @@ def revoice(ctx, chapter: dict, scenes: list[str], step_dir=None, extra: str = "
     out = llm_call(prompt_for(ctx, chapter, scenes, extra), role=c["role"],
                    max_tokens=int(len(src.split()) * 2.4) + 1500, temperature=0.7, raw_dir=step_dir)
     out = detector.autofix(out)[0].strip()
+    from bookforge.core.deai import scrub
     from bookforge.core.rules_check import enforce_first_line
-    out = enforce_first_line(chapter, out)
+    out = scrub(enforce_first_line(chapter, out))
     parts = [p.strip() for p in re.split(r"\n\s*\*\s*\*\s*\*\s*\n", "\n" + out + "\n") if p.strip()]
     ratio = len(out.split()) / max(1, _desired(chapter, src))
     after = detector.detect(out, allow).get("score", 0)

@@ -13,6 +13,7 @@ from pydantic import Field
 from bookforge.core import progress
 from bookforge.craft import engine as craft
 from bookforge.core.io import atomic_write_json, read_json, stable_hash
+from bookforge.core.deai import scrub_obj
 from bookforge.core.llm import llm_call
 from bookforge.core.schema import (Chapter, _Loose, normalize_characters, normalize_outline,
                                    normalize_world)
@@ -125,6 +126,7 @@ Rules:
 
 Output ONLY JSON: {{"chapters": [{{"id": "ch01", "act": "Act 1", "title": "...", "summary": "<=100 words", "dramatic_question": "...", "key_events": ["..."], "ends_with": "...", "setups": ["..."], "payoffs": ["..."], "structure": {{"act": "1", "save_the_cat": "opening_image", "heros_journey": "ordinary_world", "chapter_type": "discovery", "strand": "A", "a_purpose": "...", "b_purpose": "", "plot_function": "...", "value_turn": {{"from": "...", "to": "..."}}, "scene_sequel": "scene+sequel", "try_fail": "", "ending": "reveal", "color": ""}}}}]}}""",
                    role="outline", max_tokens=16000, json_mode=True, raw_dir=step_dir)
+    res = scrub_obj(res)
     (step_dir / "high_level_outline_raw.json").write_text(json.dumps(res, indent=2))
     return normalize_outline(_unwrap_list(res))
 
@@ -140,7 +142,7 @@ Each character has contradictions, a concrete want, a wound that predates the st
 
 Output ONLY JSON: {{"characters": [{{"id": "snake_case", "name": "Full Name", "aliases": ["nickname"], "role": "protagonist|antagonist|love interest|supporting|minor", "age": 30, "gender": "...", "physical": "...", "personality": "how they act", "backstory": "...", "motivation": "want vs need", "secret": "what they hide, or empty", "arc": "start -> catalyst -> cost -> end", "voice": "cadence, vocabulary, tics", "relationships": {{"other_id": "dynamic"}}, "chapters_present": ["ch01"]}}]}}""",
                    role="outline", max_tokens=8000, json_mode=True, raw_dir=step_dir)
-    return normalize_characters(_unwrap_list(res) or res)
+    return normalize_characters(scrub_obj(_unwrap_list(res) or res))
 
 
 def _phase3(prompt, bs, outline, chars, step_dir):
@@ -153,7 +155,7 @@ CHARACTERS: {json.dumps([{"id": k, "name": c["name"], "role": c["role"]} for k, 
 
 Output ONLY JSON: {{"genre_tone": "...", "core_rules": ["rule: cost or limit"], "key_locations": [{{"name": "...", "description": "senses", "significance": "..."}}], "history_timeline": ["..."], "culture_society": {{"government": "...", "religion": "...", "daily_life": "...", "taboos": "..."}}, "economy_resources": "...", "sensory_palette": {{"colors": "...", "sounds": "...", "textures": "...", "smells": "...", "weather": "..."}}, "unique_elements": ["..."], "consistency_flags": ["NEVER ...", "ALWAYS ..."], "lore": ["..."]}}""",
                    role="worldbuild", max_tokens=8000, json_mode=True, raw_dir=step_dir)
-    return normalize_world(res)
+    return normalize_world(scrub_obj(res))
 
 
 _STYLE_CTX = {"ctx": None}
@@ -197,9 +199,11 @@ You wrote this chapter plan. Check it line by line against the story pack (conti
 - staging a writer would have to guess (who is where, how they get there, who sees what).
 Keep everything that is right. Output ONLY JSON: {{"problems": ["what you found and fixed"], "plan": {{...the full corrected plan, same keys...}}}}""",
                    system=_pack.system_for(ctx, plan), role="outline", schema=PlanCheck, max_tokens=14000, raw_dir=step_dir)
+    fixed = scrub_obj(res.plan or {})
     if step_dir is not None:
-        (step_dir / f"plan_selfcheck_{plan.get('id')}.json").write_text(json.dumps(res.model_dump(), indent=2, ensure_ascii=False))
-    fixed = res.plan or {}
+        dumped = res.model_dump()
+        dumped["plan"] = fixed
+        (step_dir / f"plan_selfcheck_{plan.get('id')}.json").write_text(json.dumps(dumped, indent=2, ensure_ascii=False))
     return fixed if fixed.get("scenes") else None
 
 
@@ -268,13 +272,13 @@ Output ONLY JSON: {{"id": "{ch['id']}", "title": "...", "act": "...", "summary":
         from bookforge.core import threads as _threads
         _threads.apply_to_chapter(merged, obl)
         merged["plan_source"] = "planned"
-    return Chapter.model_validate(merged).model_dump()
+    return scrub_obj(Chapter.model_validate(merged).model_dump())
 
 
 def _phase5(prompt, target, expanded, chars, world, step_dir):
     brief = [{"id": c["id"], "title": c["title"], "ends_with": c["ends_with"], "setups": c["setups"],
               "payoffs": c["payoffs"], "scenes": [s["action"][:150] for s in c["scenes"]]} for c in expanded]
-    return llm_call(f"""You are a ruthless developmental editor. Find every weakness in this plan.
+    res = llm_call(f"""You are a ruthless developmental editor. Find every weakness in this plan.
 
 PREMISE: {prompt}
 CHAPTERS: {json.dumps(brief, indent=1)}
@@ -283,4 +287,5 @@ RULES: {json.dumps(world.get('core_rules', []))}
 
 Check structure, pacing, arcs, plot holes, stakes, and that every setup has a payoff. Flag thin chapters (one slight event, or buildup to something the next chapter delivers) as candidates to merge; never suggest adding material just for length.
 Output ONLY JSON: {{"overall_score": 0-10, "ready_to_write": true, "blocking_issues": [], "suggestions": []}}""",
-                    role="critique", schema=Assessment, max_tokens=4000, raw_dir=step_dir).model_dump()
+                    role="critique", schema=Assessment, max_tokens=4000, raw_dir=step_dir)
+    return scrub_obj(res.model_dump())

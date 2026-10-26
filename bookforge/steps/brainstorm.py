@@ -5,6 +5,7 @@ from pydantic import Field
 from bookforge.config import load_config
 from bookforge.core import progress
 from bookforge.core.io import read_json, atomic_write_json
+from bookforge.core.deai import scrub
 from bookforge.core.llm import llm_call, web_search_call
 from bookforge.core.schema import _Loose
 
@@ -51,7 +52,7 @@ Suggest 6-8 themes or tropes that fit the premise. Output ONLY JSON:
 PREMISE: {prompt}
 GENRE: {result['genre']}
 THEMES: {json.dumps(result['themes'])}""", max_tokens=800, role="brainstorm")
-    result["persona"] = persona.strip()
+    result["persona"] = scrub(persona.strip())
     (step_dir / "output.json").write_text(json.dumps(result, indent=2))
     ctx.metadata["brainstorm"] = result
     ctx.save_json("metadata.json", ctx.metadata)

@@ -17,21 +17,51 @@ def banned_words() -> list[str]:
 
 
 # ------------------------------------------------------------------ scrub
+def _vendor():
+    """Load the vendored scrubber by path so the file stays standalone."""
+    import importlib.util
+    import sys
+    path = STYLE_DIR / "vendor" / "token_scrub" / "scrub.py"
+    name = "bookforge_vendored_token_scrub"
+    cached = sys.modules.get(name)
+    if cached is not None and getattr(cached, "__file__", None) == str(path):
+        return cached
+    spec = importlib.util.spec_from_file_location(name, path)
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
+
 def scrub(text: str) -> str:
-    """Token-level scrub: dashes, smart quotes, ellipsis char. Idempotent."""
-    t = text
-    t = t.replace("\u201c", '"').replace("\u201d", '"').replace("\u201e", '"')
-    t = t.replace("\u2018", "'").replace("\u2019", "'").replace("\u201a", "'")
-    t = t.replace("\u2026", "...")
-    t = re.sub(r"(\d)\s*\u2013\s*(\d)", r"\1-\2", t)        # ranges 1990-1995
-    t = re.sub(r"\s*[\u2014\u2013]+\s*(?=[\"'])", "...", t)  # interrupted speech before close quote
-    t = re.sub(r"(?<=[\"'])\s*[\u2014\u2013]+\s*", "", t)     # dash right after open quote
-    t = re.sub(r"\s*[\u2014\u2013]+\s*$", ".", t, flags=re.M)  # trailing dash at line end
-    t = re.sub(r"\s*--+\s*", ", ", t)
-    t = re.sub(r"\s*[\u2014\u2013]+\s*", ", ", t)
-    t = re.sub(r",\s*([.,;:!?])", r"\1", t)
-    t = re.sub(r"[ \t]{2,}", " ", t)
-    return t
+    """Token-level scrub in fiction mode: dialogue-safe dashes, then the other
+    Unicode tells. Idempotent. ``deai.dash_policy`` is ``fiction``; that is the
+    only policy this function applies."""
+    return _vendor().scrub(text, mode="fiction")[0]
+
+
+def scrub_report(text: str) -> tuple[str, dict]:
+    """Fiction scrub plus the vendor report counts."""
+    out, report = _vendor().scrub(text, mode="fiction")
+    return out, dict(report.counts)
+
+
+def scrub_obj(obj):
+    """Scrub string values inside a parsed JSON-like object. Keys are kept.
+    Pass a dict or list, not a raw JSON string: scrubbing the serialized text
+    would rewrite characters that JSON uses for quoting."""
+    if isinstance(obj, str):
+        return scrub(obj)
+    if isinstance(obj, list):
+        return [scrub_obj(x) for x in obj]
+    if isinstance(obj, dict):
+        return {k: scrub_obj(v) for k, v in obj.items()}
+    return obj
+
+
+def count_token_tells(text: str) -> dict:
+    """Remaining mechanical-token codepoints, keyed by tell name."""
+    return _vendor().count_tells(text)
 
 
 # ------------------------------------------------------------------ lint
@@ -56,6 +86,10 @@ def _sentences(s: str) -> list[str]:
     return [x.strip() for x in re.split(r"(?<=[.!?])\s+", s) if x.strip()]
 
 
+_QMAP = str.maketrans({"\u201c": '"', "\u201d": '"', "\u201e": '"', "\u2018": "'", "\u2019": "'",
+                     "\u00ab": '"', "\u00bb": '"'})
+
+
 def lint_paragraph(p: str, names: list[str] | None = None, prev: str = "") -> list[dict]:
     issues = []
     if re.search(r"[\u2014\u2013\u201c\u201d\u2018\u2019\u2026]", p):
@@ -65,11 +99,12 @@ def lint_paragraph(p: str, names: list[str] | None = None, prev: str = "") -> li
         if m:
             issues.append({"rule": "not_x_but_y", "detail": m.group(0)[:80]})
             break
-    low = p.lower()
+    # Stock words and fragments are narration-only. Quoted character dialogue is exempt.
+    narration = _DIALOGUE.sub(" ", p.translate(_QMAP))
+    low = narration.lower()
     for w in banned_words():
         if re.search(r"\b" + re.escape(w) + r"\b", low):
             issues.append({"rule": "stock_word", "detail": w})
-    narration = _DIALOGUE.sub(" ", p)
     for s in _sentences(narration):
         words = re.findall(r"[A-Za-z']+", s)
         if 0 < len(words) <= 6 and not _VERBISH.search(s):

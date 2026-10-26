@@ -114,7 +114,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     },
     "revise": {"recritique": True, "max_passes": 1},
     # Anti-AI pass: detector (style/ai_tells.yaml) then cheap LLM rewrite of flagged paragraphs only.
-    "deai": {"max_flag_ratio": 0.0, "max_loops": 2, "min_severity": 2, "cluster": 3},
+    "deai": {"max_flag_ratio": 0.0, "max_loops": 2, "min_severity": 2, "cluster": 3,
+             "fail_on_tokens": True, "fragment_max_ratio": 0.02, "dash_policy": "fiction"},
     # Post-draft screen (core/screen.py): code checks + Jev (TypeSafe System One, key TYPESAFE_API_KEY)
     # flag sections; the revise editor then reads only a revision packet. Off by default; see README.
     "screen": {"enabled": False, "jev": True, "model": "jev-1.13.0", "section_words": 600,
