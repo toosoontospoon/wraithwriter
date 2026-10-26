@@ -179,15 +179,25 @@ def _is_dashish(ch: str) -> bool:
     return bool(ch) and (ch in _FICTION_DASH or ch == "-")
 
 
-def _later_single_closer(text: str, index: int) -> bool:
-    """True when this quotation still has its closer ahead.
+def _starts_new_quotation(text: str, index: int) -> bool:
+    """True when the quote at index opens a following quotation.
 
-    A `.?!` glued to a single quote (`boat.'`) or a dash-preceded quote
-    (`room—'`) closes this quotation. Stop only at a whitespace-preceded
-    opener, so a later `'yes.'` does not. Contractions and letter-preceded
-    possessives stay inside this quotation.
+    The next non-space character must be a word, and that span must have its
+    own closer before a whitespace-preceded opener. A quote followed by the
+    end, a space, or punctuation (including a dash) closes the current
+    quotation instead.
     """
-    j = index + 1
+    nxt_raw = text[index + 1] if index + 1 < len(text) else ""
+    if nxt_raw == "" or nxt_raw.isspace() or _is_dashish(nxt_raw) or nxt_raw in ".,;:!?)]}":
+        return False
+    if not _next_nonspace(text, index).isalpha():
+        return False
+    return _span_has_closer(text, index)
+
+
+def _span_has_closer(text: str, opener_index: int) -> bool:
+    """True when this quotation closes before another whitespace-preceded opener."""
+    j = opener_index + 1
     n = len(text)
     while j < n:
         ch = text[j]
@@ -197,20 +207,52 @@ def _later_single_closer(text: str, index: int) -> bool:
             return False
         if ch in _AMBIG_SINGLE:
             prev = text[j - 1] if j else ""
+            nxt_raw = text[j + 1] if j + 1 < n else ""
+            if prev.isalpha() and nxt_raw.isalpha():
+                j += 1
+                continue
+            if prev == "" or prev.isspace():
+                return False
+            if (
+                nxt_raw == ""
+                or nxt_raw.isspace()
+                or _is_dashish(nxt_raw)
+                or nxt_raw in ".,;:!?)]}"
+            ):
+                return True
+            nxt_ns = _next_nonspace(text, j)
+            if nxt_ns == "" or _is_dashish(nxt_ns) or nxt_ns in ".,;:!?)]}":
+                return True
+            j += 1
+            continue
+        j += 1
+    return False
+
+
+def _next_single_span(text: str, index: int) -> str:
+    """How the next single quote relates to the one at index.
+
+    'new' means it opens a following quotation. 'keep' means it still closes
+    this one (so a letter-preceded apostrophe here is a possessive). 'none'
+    means no further quote.
+    """
+    j = index + 1
+    n = len(text)
+    while j < n:
+        ch = text[j]
+        if ch == "\u2018":
+            return "new"
+        if ch in _AMBIG_SINGLE:
+            prev = text[j - 1] if j else ""
             nxt = text[j + 1] if j + 1 < n else ""
             if prev.isalpha() and nxt.isalpha():
                 j += 1
                 continue
-            if prev.isalpha():
-                j += 1
-                continue
-            if _is_dashish(prev):
-                return True
-            if prev == "" or prev.isspace():
-                return False
-            return True
+            if _starts_new_quotation(text, j):
+                return "new"
+            return "keep"
         j += 1
-    return False
+    return "none"
 
 
 def _quote_roles(text: str) -> list[str]:
@@ -219,11 +261,12 @@ def _quote_roles(text: str) -> list[str]:
     `'` and U+2019 between letters are contractions. With no unmatched opener
     of that kind, a letter-preceded `'` or U+2019 is a possessive. Inside a
     quote, a letter-preceded mark closes only when the next non-space character
-    is the end, a dash, or punctuation. When that next character is a word and
-    this same quotation still has a closer ahead (`boat.'` or `room—'`), the
-    mark is a possessive and the stack stays open. A whitespace-preceded opener
-    starts a later quotation and does not count. `"` pairs with `"`. U+2019 is
-    a closer only when this scan says so.
+    is the end, a dash, or punctuation. When that next character is a word, the
+    only lookahead is whether a later quote opens a following quotation (its
+    next non-space character is a word, and that span has its own closer). If
+    it does, this mark closes. If the later quote is followed by end, space, or
+    punctuation (`room—'`), this mark stays a possessive. `"` pairs with `"`.
+    U+2019 is a closer only when this scan says so.
     """
     roles = [""] * len(text)
     depth = {"single": 0, "double": 0}
@@ -263,7 +306,7 @@ def _quote_roles(text: str) -> list[str]:
             roles[i] = "close"
             depth[kind] -= 1
             continue
-        if nxt_ns.isalpha() and _later_single_closer(text, i):
+        if nxt_ns.isalpha() and _next_single_span(text, i) == "keep":
             continue
         roles[i] = "close"
         depth[kind] -= 1

@@ -58,6 +58,12 @@ def _fiction_cases():
         ("curly dash-interrupted possessive",
          "She said \u2018the boys\u2019 room\u2014\u2019 and left.",
          "She said 'the boys' room...' and left."),
+        ("dash before next quotation",
+         "He muttered 'no' once\u2014'yes,' she said.",
+         "He muttered 'no' once, 'yes,' she said."),
+        ("dash before next quotation tight",
+         "She said 'hello' room\u2014'go'.",
+         "She said 'hello' room, 'go'."),
         ("curly possessive inside dialogue",
          "She said \u2018the boys\u2019 boat.\u2019\u2014then left.",
          "She said 'the boys' boat.', then left."),
@@ -87,6 +93,65 @@ def _fiction_cases():
          "\u201cWait\u2014\u201d she said\u2014quietly\u2026 pages 10\u201312 and \u2018ok\u2019",
          '"Wait..." she said, quietly... pages 10-12 and \'ok\''),
     ]
+
+
+_QUOTE_GLYPHS = set("\"'\u2018\u2019\u201c\u201d\u201e\u201a\u00ab\u00bb")
+
+
+def _quote_role_cases():
+    """(label, text, role of each quote glyph in order). open, close, or ''."""
+    return [
+        ("dash before close quote", '"Wait\u2014" she said.', ["open", "close"]),
+        ("leading dash in quote", '"\u2014No," he said.', ["open", "close"]),
+        ("dash before open quote", 'She said \u2014 "hello"', ["open", "close"]),
+        ("dash before open quote tight", "She whispered\u2014'Go.'", ["open", "close"]),
+        ("dash after close quote", '"Wait." \u2014 she said.', ["open", "close"]),
+        ("dash after close quote tight", 'He shouted "No"\u2014then left.', ["open", "close"]),
+        ("apostrophe inside quotes", "She said 'don't'\u2014then left.", ["open", "", "close"]),
+        ("possessive before dash", "the boys'\u2014then the girls left.", [""]),
+        ("interrupted contraction", "'don't\u2014'", ["open", "", "close"]),
+        ("possessive inside dialogue",
+         "She said 'the boys' boat.'\u2014then left.", ["open", "", "close"]),
+        ("plural possessive inside dialogue",
+         "She said 'the boys' boats.'\u2014then left.", ["open", "", "close"]),
+        ("second quotation after closer",
+         "She said 'hello' \u2014 'go'.", ["open", "close", "open", "close"]),
+        ("closer before a later quotation",
+         "She said 'hello' and waved. He answered 'yes.'\u2014then left.",
+         ["open", "close", "open", "close"]),
+        ("yes period closer", "'yes.'\u2014then", ["open", "close"]),
+        ("dash-interrupted possessive",
+         "She said 'the boys' room\u2014' and left.", ["open", "", "close"]),
+        ("curly dash-interrupted possessive",
+         "She said \u2018the boys\u2019 room\u2014\u2019 and left.", ["open", "", "close"]),
+        ("dash before next quotation",
+         "He muttered 'no' once\u2014'yes,' she said.",
+         ["open", "close", "open", "close"]),
+        ("dash before next quotation tight",
+         "She said 'hello' room\u2014'go'.",
+         ["open", "close", "open", "close"]),
+        ("curly possessive inside dialogue",
+         "She said \u2018the boys\u2019 boat.\u2019\u2014then left.", ["open", "", "close"]),
+        ("curly interrupted contraction", "\u2018don\u2019t\u2014\u2019", ["open", "", "close"]),
+        ("name apostrophe", "O'Brien\u2014ran", [""]),
+        ("all quote kinds",
+         "\u201cHi\u201d \u2018x\u2019 \u00aby\u00bb \u201ez\u201c \u201aW\u2018",
+         ["open", "close", "open", "close", "open", "close", "open", "open", "open", "open"]),
+        ("mixed dialogue",
+         "\u201cWait\u2014\u201d she said\u2014quietly\u2026 pages 10\u201312 and \u2018ok\u2019",
+         ["open", "close", "open", "close"]),
+    ]
+
+
+def _roles_on_quotes(roles: list[str], text: str) -> list[str]:
+    return [roles[i] for i, ch in enumerate(text) if ch in _QUOTE_GLYPHS]
+
+
+def test_quote_roles_table():
+    vendor = _load(VENDOR, "vendor_quote_roles")
+    for label, text, expected in _quote_role_cases():
+        got = _roles_on_quotes(vendor._quote_roles(text), text)
+        assert got == expected, label
 
 
 def _bad_periods(text: str) -> int:
