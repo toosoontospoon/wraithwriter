@@ -59,13 +59,21 @@ TELLS = {
 # through to the upstream ". " substitution.
 _FICTION_DASH = "".join(DASHES)
 _QUOTES = "\"'\u201c\u201d\u2018\u2019\u201e\u201a\u00ab\u00bb"
-# English-direction marks. Straight double quotes are open or close by parity.
-# A straight ' between letters, or a possessive ' after a letter while no
-# single quote is open, is an apostrophe and is not a quotation mark.
-# Low-9 marks and guillemets have one direction.
-_OPEN_QUOTES = set("\u201c\u2018\u00ab\u201e\u201a")
-_CLOSE_QUOTES = set("\u201d\u2019\u00bb")
-_STRAIGHT_QUOTES = set("\"'")
+# Curly openers and the distinct closers have one direction. U+2019 is not a
+# closer by itself: only _quote_roles may call it a closer or an apostrophe.
+_ALWAYS_OPEN = {
+    "\u2018": "single",
+    "\u201c": "double",
+    "\u201e": "double",
+    "\u201a": "single",
+    "\u00ab": "double",
+}
+_ALWAYS_CLOSE = {
+    "\u201d": "double",
+    "\u00bb": "double",
+}
+_AMBIG_SINGLE = frozenset("'\u2019")
+_AMBIG_DOUBLE = frozenset('"')
 
 
 @dataclass
@@ -159,61 +167,92 @@ def _scrub_prose(text: str) -> tuple[str, Report]:
     return out, r
 
 
-def _single_quote_roles(text: str) -> list[str]:
-    """'open', 'close', or '' for each index.
+def _next_nonspace(text: str, index: int) -> str:
+    j = index + 1
+    n = len(text)
+    while j < n and text[j] in " \t\r\n":
+        j += 1
+    return text[j] if j < n else ""
 
-    A ' between letters is a contraction. A ' after a letter while no single
-    quote is open is a possessive. Neither counts as a quotation mark, so a
-    dash beside it is an ordinary comma join.
+
+def _is_dashish(ch: str) -> bool:
+    return bool(ch) and (ch in _FICTION_DASH or ch == "-")
+
+
+def _later_single_closer(text: str, index: int) -> bool:
+    """True when a later `.?!` is glued to a single quote (`boat.'`)."""
+    j = index + 1
+    n = len(text)
+    while j < n - 1:
+        if text[j] in ".?!" and text[j + 1] in _AMBIG_SINGLE:
+            return True
+        j += 1
+    return False
+
+
+def _quote_roles(text: str) -> list[str]:
+    """'open', 'close', or '' for every index. One left-to-right pass.
+
+    `'` and U+2019 between letters are contractions. With no unmatched opener
+    of that kind, a letter-preceded `'` or U+2019 is a possessive. Inside a
+    quote, a letter-preceded mark closes only when the next non-space character
+    is the end, a dash, or punctuation. When that next character is a word and
+    a later `boat.'` delimiter exists, the mark is a possessive and the stack
+    stays open. `"` pairs with `"`. U+2019 is a closer only when this scan says so.
     """
     roles = [""] * len(text)
-    depth = 0
+    depth = {"single": 0, "double": 0}
     for i, ch in enumerate(text):
-        if ch != "'":
+        if ch in _ALWAYS_OPEN:
+            roles[i] = "open"
+            depth[_ALWAYS_OPEN[ch]] += 1
+            continue
+        if ch in _ALWAYS_CLOSE:
+            roles[i] = "close"
+            kind = _ALWAYS_CLOSE[ch]
+            if depth[kind]:
+                depth[kind] -= 1
+            continue
+        if ch in _AMBIG_SINGLE:
+            kind = "single"
+        elif ch in _AMBIG_DOUBLE:
+            kind = "double"
+        else:
             continue
         prev = text[i - 1] if i else ""
         nxt = text[i + 1] if i + 1 < len(text) else ""
-        if prev.isalpha() and nxt.isalpha():
+        if kind == "single" and prev.isalpha() and nxt.isalpha():
             continue
-        if prev.isalpha() and depth % 2 == 0:
+        if depth[kind] == 0:
+            if kind == "single" and prev.isalpha():
+                continue
+            roles[i] = "open"
+            depth[kind] += 1
             continue
-        roles[i] = "close" if depth % 2 else "open"
-        depth += 1
+        if kind == "double" or not prev.isalpha():
+            roles[i] = "close"
+            depth[kind] -= 1
+            continue
+        nxt_ns = _next_nonspace(text, i)
+        if nxt_ns == "" or _is_dashish(nxt_ns) or nxt_ns in ".,;:!?)]}":
+            roles[i] = "close"
+            depth[kind] -= 1
+            continue
+        if nxt_ns.isalpha() and _later_single_closer(text, i):
+            continue
+        roles[i] = "close"
+        depth[kind] -= 1
     return roles
 
 
-def _straight_role(text: str, index: int, single_roles: list[str]) -> str:
-    """'open', 'close', or '' . Apostrophes are ''."""
-    ch = text[index]
-    if ch == '"':
-        return "close" if text.count('"', 0, index) % 2 else "open"
-    if ch == "'":
-        return single_roles[index]
-    return ""
-
-
-def _is_closing_quote(text: str, index: int, single_roles: list[str]) -> bool:
+def _is_closing_quote(index: int, roles: list[str]) -> bool:
     """True when the quote at index ends a quotation (dash before it -> ...)."""
-    if index < 0 or index >= len(text):
-        return False
-    ch = text[index]
-    if ch in _CLOSE_QUOTES:
-        return True
-    if ch in _OPEN_QUOTES or ch not in _STRAIGHT_QUOTES:
-        return False
-    return _straight_role(text, index, single_roles) == "close"
+    return 0 <= index < len(roles) and roles[index] == "close"
 
 
-def _is_opening_quote(text: str, index: int, single_roles: list[str]) -> bool:
+def _is_opening_quote(index: int, roles: list[str]) -> bool:
     """True when the quote at index starts a quotation (dash after it is cut)."""
-    if index < 0 or index >= len(text):
-        return False
-    ch = text[index]
-    if ch in _OPEN_QUOTES:
-        return True
-    if ch in _CLOSE_QUOTES or ch not in _STRAIGHT_QUOTES:
-        return False
-    return _straight_role(text, index, single_roles) == "open"
+    return 0 <= index < len(roles) and roles[index] == "open"
 
 
 def _fiction_dashes(text: str, r: Report) -> str:
@@ -240,11 +279,11 @@ def _fiction_dashes(text: str, r: Report) -> str:
 
     before_q = re.compile(rf"\s*[{_FICTION_DASH}]+\s*(?=[{_QUOTES}])")
     n_close = 0
-    single_roles = _single_quote_roles(out)
+    roles = _quote_roles(out)
 
     def _before_close(m: re.Match) -> str:
         nonlocal n_close
-        if _is_closing_quote(out, m.end(), single_roles):
+        if _is_closing_quote(m.end(), roles):
             n_close += 1
             return "..."
         return m.group(0)
@@ -255,11 +294,11 @@ def _fiction_dashes(text: str, r: Report) -> str:
 
     after_q = re.compile(rf"(?<=[{_QUOTES}])\s*[{_FICTION_DASH}]+\s*")
     n_open = 0
-    single_roles = _single_quote_roles(out)
+    roles = _quote_roles(out)
 
     def _after_open(m: re.Match) -> str:
         nonlocal n_open
-        if _is_opening_quote(out, m.start() - 1, single_roles):
+        if _is_opening_quote(m.start() - 1, roles):
             n_open += 1
             return ""
         return m.group(0)
