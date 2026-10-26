@@ -59,7 +59,9 @@ TELLS = {
 # through to the upstream ". " substitution.
 _FICTION_DASH = "".join(DASHES)
 _QUOTES = "\"'\u201c\u201d\u2018\u2019\u201e\u201a\u00ab\u00bb"
-# English-direction marks. Straight quotes are open or close by parity.
+# English-direction marks. Straight double quotes are open or close by parity.
+# A straight ' between letters, or a possessive ' after a letter while no
+# single quote is open, is an apostrophe and is not a quotation mark.
 # Low-9 marks and guillemets have one direction.
 _OPEN_QUOTES = set("\u201c\u2018\u00ab\u201e\u201a")
 _CLOSE_QUOTES = set("\u201d\u2019\u00bb")
@@ -157,13 +159,40 @@ def _scrub_prose(text: str) -> tuple[str, Report]:
     return out, r
 
 
-def _straight_quote_parity(text: str, index: int) -> str:
-    """'open' or 'close' for a straight quote. Odd count so far means close."""
+def _single_quote_roles(text: str) -> list[str]:
+    """'open', 'close', or '' for each index.
+
+    A ' between letters is a contraction. A ' after a letter while no single
+    quote is open is a possessive. Neither counts as a quotation mark, so a
+    dash beside it is an ordinary comma join.
+    """
+    roles = [""] * len(text)
+    depth = 0
+    for i, ch in enumerate(text):
+        if ch != "'":
+            continue
+        prev = text[i - 1] if i else ""
+        nxt = text[i + 1] if i + 1 < len(text) else ""
+        if prev.isalpha() and nxt.isalpha():
+            continue
+        if prev.isalpha() and depth % 2 == 0:
+            continue
+        roles[i] = "close" if depth % 2 else "open"
+        depth += 1
+    return roles
+
+
+def _straight_role(text: str, index: int, single_roles: list[str]) -> str:
+    """'open', 'close', or '' . Apostrophes are ''."""
     ch = text[index]
-    return "close" if text.count(ch, 0, index) % 2 else "open"
+    if ch == '"':
+        return "close" if text.count('"', 0, index) % 2 else "open"
+    if ch == "'":
+        return single_roles[index]
+    return ""
 
 
-def _is_closing_quote(text: str, index: int) -> bool:
+def _is_closing_quote(text: str, index: int, single_roles: list[str]) -> bool:
     """True when the quote at index ends a quotation (dash before it -> ...)."""
     if index < 0 or index >= len(text):
         return False
@@ -172,10 +201,10 @@ def _is_closing_quote(text: str, index: int) -> bool:
         return True
     if ch in _OPEN_QUOTES or ch not in _STRAIGHT_QUOTES:
         return False
-    return _straight_quote_parity(text, index) == "close"
+    return _straight_role(text, index, single_roles) == "close"
 
 
-def _is_opening_quote(text: str, index: int) -> bool:
+def _is_opening_quote(text: str, index: int, single_roles: list[str]) -> bool:
     """True when the quote at index starts a quotation (dash after it is cut)."""
     if index < 0 or index >= len(text):
         return False
@@ -184,7 +213,7 @@ def _is_opening_quote(text: str, index: int) -> bool:
         return True
     if ch in _CLOSE_QUOTES or ch not in _STRAIGHT_QUOTES:
         return False
-    return _straight_quote_parity(text, index) == "open"
+    return _straight_role(text, index, single_roles) == "open"
 
 
 def _fiction_dashes(text: str, r: Report) -> str:
@@ -211,10 +240,11 @@ def _fiction_dashes(text: str, r: Report) -> str:
 
     before_q = re.compile(rf"\s*[{_FICTION_DASH}]+\s*(?=[{_QUOTES}])")
     n_close = 0
+    single_roles = _single_quote_roles(out)
 
     def _before_close(m: re.Match) -> str:
         nonlocal n_close
-        if _is_closing_quote(out, m.end()):
+        if _is_closing_quote(out, m.end(), single_roles):
             n_close += 1
             return "..."
         return m.group(0)
@@ -225,10 +255,11 @@ def _fiction_dashes(text: str, r: Report) -> str:
 
     after_q = re.compile(rf"(?<=[{_QUOTES}])\s*[{_FICTION_DASH}]+\s*")
     n_open = 0
+    single_roles = _single_quote_roles(out)
 
     def _after_open(m: re.Match) -> str:
         nonlocal n_open
-        if _is_opening_quote(out, m.start() - 1):
+        if _is_opening_quote(out, m.start() - 1, single_roles):
             n_open += 1
             return ""
         return m.group(0)
