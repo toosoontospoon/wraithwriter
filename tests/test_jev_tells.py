@@ -77,8 +77,8 @@ def test_answers_become_hits_with_severity_and_thresholds():
     assert hit["paragraph"] and "fix" in hit and "scene" in hit and "para" in hit
     assert out["counts"]["ai_vocab"] == 1
     assert out["jev"] == "ok"
-    assert calls[0] and calls[1]
-    assert any(k.startswith("pg__") for k in calls[1]["qs"])
+    page_call = next(c for c in calls if any(k.startswith("pg__") for k in c["qs"]))
+    assert page_call["qs"]
     assert "tidy_ending_page" in out["page_scores"][0]
 
 
@@ -160,6 +160,102 @@ def test_pages_split_on_paragraphs_and_scene_breaks():
     assert pages[-1][0]["scene"] == 2
     flat = [s["id"] for page in pages for s in page]
     assert flat == [s["id"] for s in sents]
+
+
+def test_reask_band_averages_only_the_borderline_items():
+    text = "The market was a tapestry of noise."
+    calls = _fake({
+        "ai_vocab__s01": 0.5,
+        "para__ai_vocab__s01": 0.9,
+        "stock_phrase__s01": 0.95,
+        "filter_hedge__s01": 0.2,
+    }, [])
+    out = jev_tells.tag_text(text)
+    reask_calls = [c for c in calls if any(k.startswith("para__") or k.startswith("again__") for k in c["qs"])]
+    assert len(reask_calls) == 1
+    assert set(reask_calls[0]["qs"]) == {"para__ai_vocab__s01"}
+    hit = next(h for h in out["hits"] if h["category"] == "ai_vocab")
+    assert hit["p"] == 0.7
+    assert out["reasked"] == [{"category": "ai_vocab", "id": "s01", "ps": [0.5, 0.9]}]
+    assert not any(h["category"] == "filter_hedge" for h in out["hits"])
+
+    calls.clear()
+    jev.set_fake(None)
+    quiet = _fake({}, [])
+    jev_tells.tag_text("A gull sat on the post.")
+    assert len(quiet) == 2  # sentence batch + page batch, nothing in the band
+    assert not any(any(k.startswith("para__") for k in c["qs"]) for c in quiet)
+
+    calls2 = _fake({"ai_vocab__s01": 0.5, "para__ai_vocab__s01": 0.5, "again__ai_vocab__s01": 0.8}, [])
+    out = jev_tells.tag_text("The market was a tapestry of noise.", cfg={"reask": 2})
+    kinds = [next(iter(c["qs"])).split("__", 1)[0] for c in calls2]
+    assert kinds == ["ai_vocab", "para", "again", "pg"]
+    assert out["reasked"][0]["ps"] == [0.5, 0.5, 0.8]
+    assert next(h["p"] for h in out["hits"] if h["category"] == "ai_vocab") == 0.6
+
+
+def test_repeated_action_positives_and_negatives():
+    palms = ("Marta wiped her palms on her trousers.\n\n"
+             "The wind came in off the water.\n\n"
+             "She wiped her palms on her trousers again.")
+    scraper = ("She held the scraper against the hull.\n\n"
+               "A gull cried once.\n\n"
+               "She put the scraper against the hull.")
+    tubs = ("He punched down the first tub.\n\n"
+            "The room stayed warm.\n\n"
+            "He punched down the second tub.")
+    jev.set_fake(None)
+    for text in (palms, scraper, tubs):
+        hits = [h for h in jev_tells.tag_text(text)["hits"] if h["category"] == "repeated_action"]
+        assert len(hits) == 1, text
+        assert hits[0]["ids"][0] == "s01" and hits[0]["ids"][-1] == "s03"
+        assert hits[0]["severity"] == 1 and hits[0]["source"] == "code"
+        assert hits[0]["span"] in text
+
+    triple = ("She wiped her palms on her trousers.\n\n"
+              "She wiped her palms on her trousers again.\n\n"
+              "She wiped her palms on her trousers once more.")
+    third = [h for h in jev_tells.tag_text(triple)["hits"] if h["category"] == "repeated_action"]
+    assert any(h["severity"] == 2 for h in third)
+
+    door = "She opened the door.\n\nShe closed the door."
+    names = "Marta crossed the yard.\n\nMarta crossed the lane."
+    dialogue = ('"She wiped her palms on her trousers," Ned said.\n\n'
+                '"She wiped her palms on her trousers again," Ned said.')
+    far = "\n\n".join([
+        "She wiped her palms on her trousers.",
+        "The wind shifted.",
+        "A bell rang.",
+        "Smoke drifted east.",
+        "Children left the lane.",
+        "Water climbed the step.",
+        "Noon passed quietly.",
+        "The cat slept.",
+        "Dust settled on the sill.",
+        "She wiped her palms on her trousers again.",
+    ])
+    for text, kw in ((door, {}), (names, {"names": ["Marta"]}), (dialogue, {}), (far, {})):
+        hits = [h for h in jev_tells.tag_text(text, cfg=kw)["hits"] if h["category"] == "repeated_action"]
+        assert hits == [], text
+
+
+def test_uniform_rhythm_length_and_opening_word():
+    jev.set_fake(None)
+    length = "She opened the door. She looked inside. She saw the table. She sat down."
+    hits = [h for h in jev_tells.tag_text(length)["hits"] if h["category"] == "uniform_rhythm"]
+    assert any(len(h["ids"]) >= 4 and "similar length" in h["reason"] for h in hits)
+    assert any("open with 'she'" in h["reason"] for h in hits)
+    assert all(h["source"] == "code" and h["span"] in length for h in hits)
+
+    opening = "He tied his apron. He lit the burners. He checked the proof box."
+    opens = [h for h in jev_tells.tag_text(opening)["hits"] if h["category"] == "uniform_rhythm"]
+    assert len(opens) == 1 and opens[0]["severity"] == 2 and opens[0]["ids"] == ["s01", "s02", "s03"]
+
+    varied = "The long afternoon dragged over the empty yard behind the bakery. He sat. A gull cried once."
+    assert not any(h["category"] == "uniform_rhythm" for h in jev_tells.tag_text(varied)["hits"])
+
+    quoted = ('"She left the house."\n\n"She locked the door."\n\n"She crossed the yard."\n\n"She fed the cat."')
+    assert not any(h["category"] == "uniform_rhythm" for h in jev_tells.tag_text(quoted)["hits"])
 
 
 def test_scene_break_is_its_own_paragraph_and_not_a_sentence():

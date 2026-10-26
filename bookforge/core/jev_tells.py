@@ -12,6 +12,7 @@ import copy
 import hashlib
 import json
 import re
+import statistics
 from pathlib import Path
 
 from bookforge.core import jev
@@ -365,8 +366,158 @@ def tag_page(sents: list[dict], cfg: dict | None = None, log_dir=None, tax: dict
 
 
 def _reask(state, sents, cats, probs, cfg, log_dir, tax) -> list[dict]:
-    """Noise band. Item 2 fills this in. No extra call until then."""
-    return []
+    """One extra batched call for probabilities inside ``band``. ``reask`` 2 asks the original again too."""
+    reask_n = int(cfg.get("reask") or 0)
+    if reask_n <= 0 or not probs:
+        return []
+    lo, hi = float(cfg["band"][0]), float(cfg["band"][1])
+    band = [(cat_id, sid_) for (cat_id, sid_), ps in probs.items() if ps and lo <= ps[0] <= hi]
+    if not band:
+        return []
+    by_id = {s["id"]: s for s in sents}
+    cats_by = {c["id"]: c for c in cats}
+    res = _ask(state, {f"para__{cat_id}__{sid_}": sentence_question(cats_by[cat_id], by_id[sid_], "paraphrase")
+                       for cat_id, sid_ in band}, cfg, log_dir, "jev_tells:reask")
+    for cat_id, sid_ in band:
+        p = _noul(res, f"para__{cat_id}__{sid_}")
+        if p is not None:
+            probs[(cat_id, sid_)].append(p)
+    if reask_n >= 2:
+        res2 = _ask(state, {f"again__{cat_id}__{sid_}": sentence_question(cats_by[cat_id], by_id[sid_], "primary")
+                            for cat_id, sid_ in band}, cfg, log_dir, "jev_tells:reask-again")
+        for cat_id, sid_ in band:
+            p = _noul(res2, f"again__{cat_id}__{sid_}")
+            if p is not None:
+                probs[(cat_id, sid_)].append(p)
+    return [{"category": cat_id, "id": sid_, "ps": [round(p, 3) for p in probs[(cat_id, sid_)]]}
+            for cat_id, sid_ in band]
+
+
+_STOP = set("""
+a an the her his their its my your our she he they it him them i we you
+on in of to and or but with for from at by as into onto over under about
+again then that this those these was were is are be been had has have did do does
+not no so too very just than down up off out back first second third fourth
+said asked says replied whispered shouted told
+another same next last other own
+""".split())
+
+
+def _stem(token: str) -> str:
+    for suf in ("ing", "ed", "es", "s"):
+        if token.endswith(suf) and len(token) - len(suf) >= 3:
+            return token[: -len(suf)]
+    return token
+
+
+def _content_tokens(sentence: str, names: list[str] | None) -> list[str]:
+    name_set = set()
+    for name in names or []:
+        for part in re.findall(r"[A-Za-z']+", name):
+            name_set.add(part.lower())
+            name_set.add(_stem(part.lower()))
+    out = []
+    for tok in re.findall(r"[A-Za-z']+", _mask_quotes(sentence)):
+        low = tok.lower()
+        if low in _STOP:
+            continue
+        stem = _stem(low)
+        if stem in _STOP or low in name_set or stem in name_set or len(stem) < 2:
+            continue
+        out.append(stem)
+    return out
+
+
+def _grams(tokens: list[str]) -> set[tuple[str, ...]]:
+    grams = set()
+    for n in (2, 3):
+        for i in range(len(tokens) - n + 1):
+            grams.add(tuple(tokens[i:i + n]))
+    return grams
+
+
+def repeated_action(sents: list[dict], cfg: dict, tax: dict) -> list[dict]:
+    """Flag a later narration sentence that repeats a verb-object pair or a 2-3 word content phrase."""
+    window = int(cfg.get("repeat_window") or 6)
+    names = cfg.get("names") or []
+    sigs = []
+    for s in sents:
+        sigs.append(set() if s.get("dialogue_only") else _grams(_content_tokens(s["text"], names)))
+    seen: dict[tuple[str, ...], list[int]] = {}
+    hits = []
+    for i, grams in enumerate(sigs):
+        matched_prev = None
+        best = 0
+        for gram in grams:
+            earlier = [k for k in seen.get(gram, [])
+                       if sents[k]["scene"] == sents[i]["scene"] and 0 < i - k <= window]
+            if not earlier:
+                continue
+            cluster = len(earlier) + 1
+            if cluster > best:
+                best = cluster
+                matched_prev = earlier[-1]
+        for gram in grams:
+            seen.setdefault(gram, []).append(i)
+        if matched_prev is None:
+            continue
+        hit = make_hit(sents[i], "repeated_action", None, tax,
+                       ids=[sents[matched_prev]["id"], sents[i]["id"]], source="code", span=sents[i]["text"])
+        hit["severity"] = 2 if best >= 3 else 1
+        hit["reason"] = "repeated action: a verb-object pair or a short content phrase comes back inside the window"
+        hits.append(hit)
+    return hits
+
+
+def uniform_rhythm(sents: list[dict], tax: dict) -> list[dict]:
+    """Runs of >=4 similar-length narration sentences, or >=3 in a row with the same opening word."""
+    hits = []
+    n = len(sents)
+    narr = [not s.get("dialogue_only") for s in sents]
+    wc = [len(_mask_quotes(s["text"]).split()) for s in sents]
+    i = 0
+    while i < n:
+        j = i
+        while j < n and narr[j] and sents[j]["scene"] == sents[i]["scene"]:
+            run = wc[i:j + 1]
+            mean = statistics.mean(run)
+            if mean <= 0 or any(abs(x - mean) > 0.35 * mean for x in run):
+                break
+            j += 1
+        if j - i >= 4:
+            hit = make_hit(sents[i], "uniform_rhythm", None, tax,
+                           ids=[sents[k]["id"] for k in range(i, j)], source="code", span=sents[i]["text"])
+            hit["severity"] = 1 if j - i < 6 else 3 if j - i >= 8 else 2
+            hit["reason"] = (f"uniform rhythm: {j - i} sentences of similar length "
+                             f"({min(wc[i:j])}-{max(wc[i:j])} words)")
+            hits.append(hit)
+            i = j
+        else:
+            i += 1
+    first = []
+    for s in sents:
+        words = re.sub(r"^\W+", "", _mask_quotes(s["text"]).strip()).split()
+        first.append(words[0].lower() if words else "")
+    i = 0
+    while i < n:
+        j = i
+        while (j < n and first[j] and first[j] == first[i] and narr[j]
+               and sents[j]["scene"] == sents[i]["scene"]):
+            j += 1
+        if j - i >= 3:
+            hit = make_hit(sents[i], "uniform_rhythm", None, tax,
+                           ids=[sents[k]["id"] for k in range(i, j)], source="code", span=sents[i]["text"])
+            hit["severity"] = 2
+            hit["reason"] = f"uniform rhythm: {j - i} sentences in a row open with '{first[i]}'"
+            hits.append(hit)
+            i = j
+        else:
+            i += 1
+    return hits
+
+
+def code_hits(sents: list[dict], cfg: dict, tax: dict) -> list[dict]:
+    return repeated_action(sents, cfg, tax) + uniform_rhythm(sents, tax)
 
 
 def _gate_page(page: list[dict], raw_hits: list[dict], page_scores: dict, tax: dict,
@@ -395,11 +546,6 @@ def _gate_page(page: list[dict], raw_hits: list[dict], page_scores: dict, tax: d
                 continue
             kept.append(make_hit(sent, "not_x_but_y", float(instead_p), tax))
     return kept
-
-
-def code_hits(sents: list[dict], cfg: dict, tax: dict) -> list[dict]:
-    """Code-only tells. Uniform rhythm and repeated actions land in item 2."""
-    return []
 
 
 def _cache_key(text: str, tax: dict, cfg: dict) -> str:
@@ -476,7 +622,7 @@ def _finish(text: str, sents: list[dict], hits: list[dict], page_scores: list, r
     seen = set()
     uniq = []
     for h in hits:
-        key = (h["category"], tuple(h["ids"]))
+        key = (h["category"], tuple(h["ids"]), h.get("reason"))
         if key in seen:
             continue
         seen.add(key)
