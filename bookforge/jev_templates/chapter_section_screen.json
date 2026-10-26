@@ -50,6 +50,54 @@
     "false": "The section ends on action, dialogue, or a concrete image without summing up its meaning."
    }
   },
+  "ai_packed_noun": {
+   "type": "noul",
+   "instructions": "Does narration in `section_text` use a short noun that never gets a referent, so the reader cannot tell what concrete thing it names (for example 'the streak', 'the pull', 'the feed', or 'the signal')?",
+   "criteria": {
+    "true": "A short loaded noun stands in for a thing the sentence never names.",
+    "false": "Each noun has a clear referent in the sentence or the one before it."
+   }
+  },
+  "ai_hedge_stack": {
+   "type": "noul",
+   "instructions": "Does narration in `section_text` stack hedges (two or more of may, might, could, possibly, potentially, perhaps) so the action has no clear outcome?",
+   "criteria": {
+    "true": "A narration sentence stacks two or more hedges.",
+    "false": "Hedges are absent, or a single hedge is ordinary dialogue."
+   }
+  },
+  "ai_soft_contrast": {
+   "type": "noul",
+   "instructions": "Does narration in `section_text` use a soft contrast that names a rejected alternative, such as 'X, not Y', 'rather than X, Y', or 'instead of X, Y'?",
+   "criteria": {
+    "true": "Narration names the thing by rejecting an alternative.",
+    "false": "The narration states the thing directly, or the contrast is inside quoted dialogue."
+   }
+  },
+  "ai_unclear_agency": {
+   "type": "noul",
+   "instructions": "Does narration in `section_text` leave who does what to whom unclear, or open on a pronoun when more than one character could be the referent?",
+   "criteria": {
+    "true": "A narration sentence hides the agent, or a pronoun has two possible referents.",
+    "false": "Each narration sentence has a clear agent and a single referent for each pronoun."
+   }
+  },
+  "ai_polished_intro": {
+   "type": "noul",
+   "instructions": "This section opens a scene or chapter. Does it open as a polished thesis, definition, or summary of the place or situation, instead of inside a concrete moment, action, or line?",
+   "criteria": {
+    "true": "The opening summarises or defines before anything happens.",
+    "false": "The opening is already inside an action, a line of dialogue, or a concrete sensory detail."
+   }
+  },
+  "ai_parallel_list_ending": {
+   "type": "noul",
+   "instructions": "This section closes a scene or chapter. Does it end on a tidy parallel list: three or more sentences with the same opening, an 'N things/reasons/habits' list, or a closing tricolon summary?",
+   "criteria": {
+    "true": "The close is an anaphora, an 'N things' list, or a tricolon summary.",
+    "false": "The close is an action, an image, or a line of dialogue."
+   }
+  },
   "ya_appropriate": {
    "type": "noul",
    "instructions": "Is `section_text` appropriate for a young-adult novel for readers aged 12 and up (no explicit sex, no graphic gore, no strong profanity)?",
@@ -81,10 +129,34 @@
    "flag_at": 0.5,
    "flag_with_code_at": 0.4
   },
+  "ai_packed_noun": {
+   "flag_at": 0.5,
+   "flag_with_code_at": 0.4
+  },
+  "ai_hedge_stack": {
+   "flag_at": 0.5,
+   "flag_with_code_at": 0.4
+  },
+  "ai_soft_contrast": {
+   "flag_at": 0.5,
+   "flag_with_code_at": 0.4
+  },
+  "ai_unclear_agency": {
+   "flag_at": 0.5,
+   "flag_with_code_at": 0.4
+  },
+  "ai_polished_intro": {
+   "flag_at": 0.5,
+   "flag_with_code_at": 0.4
+  },
+  "ai_parallel_list_ending": {
+   "flag_at": 0.5,
+   "flag_with_code_at": 0.4
+  },
   "ya_appropriate": {
    "flag_below": 0.8
   },
-  "_notes": "flag_with_code_at: lower bar used only when the matching regex check (screen.SOFT) also fired in the section."
+  "_notes": "flag_with_code_at: lower bar used only when the matching code check (screen.CODE_LINK) also fired in the section. ai_polished_intro is asked on the first section of a scene only; ai_parallel_list_ending on the last section only. The six de-AI questions ride the existing per-section call and are omitted when screen.deai_questions is false."
  },
  "bible_hint": {
   "session_content_conflict": "timetable",
@@ -92,6 +164,12 @@
   "ai_mirrored_lines": "Style lock: no mirrored lines.",
   "ai_rule_of_three": "Style lock: no tricolons.",
   "ai_tidy_closer": "Style lock: no tidy morals or summarizing closers.",
+  "ai_packed_noun": "Name the thing. No packed noun standing in for an unnamed contrast.",
+  "ai_hedge_stack": "No hedge stacks. Say who does what.",
+  "ai_soft_contrast": "State the thing directly. No 'X, not Y' or 'rather than X, Y' in narration.",
+  "ai_unclear_agency": "Clear referents and clear agency. Who does what to whom.",
+  "ai_polished_intro": "Start inside a concrete moment. No thesis-style scene opener.",
+  "ai_parallel_list_ending": "End on an action, an image, or a line. No parallel-list closer.",
   "ya_appropriate": "Upper-YA content limits."
  }
 }

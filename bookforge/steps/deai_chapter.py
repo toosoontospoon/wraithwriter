@@ -7,7 +7,7 @@ draft (autofixed) becomes final and the rollback is recorded. The ledger is upda
 """
 import json
 
-from bookforge.core import deai, detector, progress
+from bookforge.core import deai, detector, detector_hooks, progress
 from bookforge.core.io import read_json
 from bookforge.steps._common import join_scenes, split_scenes
 
@@ -55,7 +55,20 @@ def run(ctx, chapter_id: str):
     from bookforge.core.rules_check import enforce_first_line
     final, notes = _autofix(src.read_text())
     final = deai.scrub(enforce_first_line(chapter, final))
-    gate = {"autofix": notes}
+    from bookforge.config import load_config
+    deai_cfg = load_config().get("deai") or {}
+    residual = None
+    if deai_cfg.get("rewrite_residual"):
+        # Optional. Default off, so the chapter path adds no LLM call.
+        # Keep-only-if-better and the length guard live in rewrite_flagged; scrub again after.
+        final, residual = deai.rewrite_flagged(
+            final, names=ctx.cast_names(), allow=ctx.style().allowlist(), severe_only=True)
+        final = deai.scrub(final)
+    gate = {"autofix": notes, "residual_rewrite": None if residual is None else {
+        "rewritten_paragraphs": residual.get("rewritten_paragraphs"),
+        "score_before": residual.get("score_before"),
+        "score_after": residual.get("score_after"),
+    }}
     crit = read_json(ctx.state_dir / "critiques" / f"{chapter_id}.json", {}) or {}
     d_final, ob, ru = _duties(ctx, chapter, final, step_dir)
     tc0, rc0 = crit.get("thread_checks", []), crit.get("rule_checks", [])
@@ -87,7 +100,11 @@ def run(ctx, chapter_id: str):
     progress.record(ctx, "deai", chapter_id, inputs=inputs)
     sb = ctx.style()
     det = detector.detect(final, sb.allowlist(), ctx.cast_names())
-    (step_dir / "detector_report.txt").write_text(detector.format_report(det, max_hits=200) + token_note)
+    # Report only. external_check must not be used to change `final`.
+    external = detector_hooks.external_check(final)
+    (step_dir / "detector_report.txt").write_text(
+        detector.format_report(det, max_hits=200) + token_note
+        + "external_detector: " + json.dumps(external, sort_keys=True) + "\n")
     print(f"{chapter_id} final gate: duties draft {d_draft} -> final {d_final}"
           f"{' ROLLED BACK to draft' if gate['rolled_back'] else ''}; threads {gate['threads_met']}, "
           f"rules {gate['rules_pass']}; detector {det['score']}/10")

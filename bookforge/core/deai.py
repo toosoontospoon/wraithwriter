@@ -321,9 +321,13 @@ def rewrite_flagged(text: str, names: list[str] | None = None, llm=None, persona
             legacy = [x for x in lint_paragraph(paras[i], names, paras[i - 1] if i else "")
                       if x["rule"] not in ("token", "fragment")]
             if severe_only:
-                keep = [h for h in hs if h["severity"] >= min_sev and h["rule"] != "em_dash"]
-                if keep:
-                    todo.append((i, keep, []))
+                keep = [h for h in hs if h["severity"] >= min_sev and h["rule"] != "em_dash"
+                        and not _in_dialogue(paras[i], int(h.get("start") or 0))]
+                narr = _DIALOGUE.sub(" ", paras[i])
+                legacy = [x for x in legacy if _LINT_SEV.get(x["rule"], 1) >= min_sev
+                          and (x["rule"] == "unclear_referent" or x["detail"].lower() in narr.lower())]
+                if keep or legacy:
+                    todo.append((i, keep, legacy))
             elif (hs and detector.needs_rewrite(hs, min_sev, cluster)) or legacy:
                 todo.append((i, hs, legacy))
         if not todo:
