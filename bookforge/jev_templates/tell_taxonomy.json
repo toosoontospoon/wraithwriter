@@ -1,0 +1,268 @@
+{
+  "version": 1,
+  "categories": [
+    {
+      "id": "ai_vocab",
+      "name": "AI-favored vocabulary",
+      "definition": "uses a word fiction models overuse, such as delve, tapestry, testament, intricate, symphony, kaleidoscope, palpable, unspoken, tendrils, liminal, or 'a dance of'",
+      "true": "The line uses one of these overused words or a close cousin, for example 'a tapestry of color' or 'a testament to'.",
+      "false": "The line uses ordinary plain words, and none of the listed overused words appear.",
+      "paraphrase": "Read only line {sid} (other lines are context). Would a copy editor flag it for vocabulary that large language models lean on in fiction, such as a showy abstract noun where a plain word would do? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Replace the showy word with the plain concrete word the scene would actually use.",
+      "source": "jev"
+    },
+    {
+      "id": "stock_phrase",
+      "name": "stock phrase or cliche",
+      "definition": "uses a prefab cliche such as 'a wave of relief washed over', 'couldn't help but', 'a breath she didn't know she was holding', 'hung heavy in the air', 'time stood still', or 'a flicker of'",
+      "true": "The line contains a recognizable stock phrase or cliche.",
+      "false": "Every phrase in the line is specific to this scene, with no cliche.",
+      "paraphrase": "Read only line {sid}. Is there a ready-made phrase a reader has already met in a hundred other stories, rather than wording invented for this moment? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Replace the prefab phrase with a detail specific to this scene.",
+      "source": "jev"
+    },
+    {
+      "id": "filter_hedge",
+      "name": "filtering or hedging",
+      "definition": "filters the scene through a perception or hedge instead of stating it: seemed to, appeared to, she noticed, she felt that, as if, somehow, almost",
+      "true": "The line contains seemed, appeared to, as if, noticed, somehow, or a similar hedge or filter on what happened.",
+      "false": "The line states what happens directly, with no hedge or perception filter.",
+      "paraphrase": "Read only line {sid}. Does the narration look at the event through a perception verb or a hedge, instead of saying what happened? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "State what happens directly, and drop seemed, noticed, as if, and similar filters.",
+      "source": "jev"
+    },
+    {
+      "id": "rule_of_three",
+      "name": "decorative list of three",
+      "definition": "contains a decorative list of exactly three parallel items (nouns, adjectives, clauses, or questions) used for rhythm",
+      "true": "A three-item parallel list used for rhythm appears, for example 'why he had left, where he had slept, whether he would stay'.",
+      "false": "No three-item rhythmic list; lists are two items or a plain inventory the action needs.",
+      "paraphrase": "Read only line {sid}. Does it stack exactly three parallel items for a rhetorical beat, rather than listing what the action actually needs? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Break the decorative triple into the one or two items the action needs.",
+      "source": "jev"
+    },
+    {
+      "id": "tidy_ending",
+      "name": "tidy summary or moral ending",
+      "definition": "sums up, moralizes, or states what the moment meant, or resolves the scene with a neat symbolic gesture, as a closing line",
+      "true": "The line tells the reader what it all meant, or is a neat resolving or symbolic closer.",
+      "false": "The line is plain action, dialogue, or image, with no summing up of meaning.",
+      "paraphrase": "Read only line {sid}. Does it wrap the moment up by stating the lesson, the meaning, or a neat symbolic button? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "End on the action or image, and cut the moral or summing-up.",
+      "source": "jev"
+    },
+    {
+      "id": "emotion_explained",
+      "name": "explained emotion",
+      "definition": "names or explains a character's feeling or motive outright, telling the reader what the character feels or wants",
+      "true": "The line names an emotion or states what a character wants or feels, for example 'She was afraid' or 'She wanted to ask why he had gone'.",
+      "false": "No emotion or wish is named; feeling is left to action and dialogue.",
+      "paraphrase": "Read only line {sid}. Does it tell the reader the feeling or the wish in so many words, instead of leaving it in the action? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Cut the sentence that names the feeling, and keep the action that shows it.",
+      "source": "jev"
+    },
+    {
+      "id": "sensory_listing",
+      "name": "sensory catalog",
+      "definition": "stacks several sensory details (smell of X and Y, sound of A, feel of B) for atmosphere",
+      "true": "The line lists two or more smells, sounds, textures, or sights for atmosphere, for example 'smelled of diesel and wet rope'.",
+      "false": "The line has at most one sensory detail, or the detail is one the action requires.",
+      "paraphrase": "Read only line {sid}. Does it pile up smells, sounds, or textures to set a mood, rather than one detail the action needs? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Keep the one sensory detail the story needs, and cut the catalog.",
+      "source": "jev"
+    },
+    {
+      "id": "not_x_but_y",
+      "name": "not-X-but-Y contrast",
+      "definition": "uses contrast framing that denies one thing to assert another for effect: 'not X but Y', 'it wasn't X, it was Y', 'less X than Y', or 'instead'",
+      "true": "The line denies one thing to assert another for effect.",
+      "false": "No denial-then-assertion contrast.",
+      "paraphrase": "Read only line {sid}. Does it reject one description in order to land on a second, for rhetorical effect? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "State the thing directly, and delete the denied alternative.",
+      "source": "jev"
+    },
+    {
+      "id": "generic_detail",
+      "name": "vague or generic detail",
+      "definition": "uses a vague placeholder where a concrete specific belongs: 'something', 'a certain', 'in a way she could not name', or an unnamed abstraction",
+      "true": "The line relies on a vague word such as something, a certain, or in a way, instead of a concrete detail.",
+      "false": "The details in the line are concrete and specific.",
+      "paraphrase": "Read only line {sid}. Does a placeholder (something, a certain quality, an unnamed abstraction) stand where a concrete noun belongs? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Replace the vague placeholder with a concrete noun.",
+      "source": "jev"
+    },
+    {
+      "id": "portentous_abstraction",
+      "name": "portentous abstraction",
+      "definition": "gestures at a deep theme (time, memory, the past, silence, loss) in abstract, quotable, aphoristic language",
+      "true": "The line is an aphorism or an abstract reflection on time, the past, silence, memory, or loss.",
+      "false": "The line is concrete and does not reach for a theme.",
+      "paraphrase": "Read only line {sid}. Does it offer a quotable reflection on time, memory, silence, or the past, instead of a concrete event? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Replace the aphorism with the concrete event it was standing in for.",
+      "source": "jev"
+    },
+    {
+      "id": "mirrored_lines",
+      "name": "mirrored or anaphoric lines",
+      "definition": "repeats the same opening words or sentence structure as a neighbor for rhetorical effect",
+      "true": "The line mirrors the structure of its neighbor for effect, for example 'She did not cry. She did not speak.'",
+      "false": "The line does not repeat a neighbor's structure for effect.",
+      "paraphrase": "Read only line {sid} against the lines beside it. Does it echo a neighbor's opening or shape for rhetorical effect? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Break the repeated structure so the lines no longer echo each other.",
+      "source": "jev"
+    },
+    {
+      "id": "gesture_beat",
+      "name": "filler gesture beat",
+      "definition": "is a filler micro-action used as stage business: nodded, looked away, pressed a thumb against something, jaw tightened, let out a breath",
+      "true": "The line is mainly a small filler gesture that does not move the story.",
+      "false": "The line's action matters to the story, or there is no filler gesture.",
+      "paraphrase": "Read only line {sid}. Is it stage business (a nod, a look away, a thumb, a breath) with no effect on what happens next? Ignore words inside quotation marks.",
+      "threshold": 0.5,
+      "fix": "Cut the filler gesture, or replace it with an action that changes the scene.",
+      "source": "jev"
+    }
+  ],
+  "code_categories": [
+    {
+      "id": "uniform_rhythm",
+      "name": "uniform rhythm",
+      "definition": "a run of narration sentences of near-identical length, or three or more in a row opening with the same word",
+      "true": "Sentence lengths and shapes barely vary, or several sentences open on the same word.",
+      "false": "Sentence length and opening words vary.",
+      "paraphrase": "",
+      "threshold": 0.5,
+      "fix": "Vary the sentence length using only words already on the page. Do not add a new detail.",
+      "source": "code"
+    },
+    {
+      "id": "repeated_action",
+      "name": "repeated action",
+      "definition": "a later narration sentence repeats an earlier sentence's verb-and-object pair, or a two-to-three-word content phrase, inside a short window",
+      "true": "The same physical action, or the same short content phrase, comes back inside the window.",
+      "false": "Actions are not repeated. Shared names or a single common noun do not count.",
+      "paraphrase": "",
+      "threshold": 0.5,
+      "fix": "Change or cut the repeated gesture so the action happens once.",
+      "source": "code"
+    }
+  ],
+  "page_questions": [
+    {
+      "id": "ai_vocab",
+      "instructions": "Does any narration line of `document` use AI-favored vocabulary: a word fiction models overuse, such as delve, tapestry, testament, intricate, symphony, kaleidoscope, palpable, unspoken, tendrils, liminal, or 'a dance of'? Ignore words inside quotation marks.",
+      "true": "At least one narration line uses one of those overused words or a close cousin.",
+      "false": "No narration line uses those overused words.",
+      "threshold": 0.5
+    },
+    {
+      "id": "stock_phrase",
+      "instructions": "Does any narration line of `document` use a stock phrase or cliche, such as 'a wave of relief washed over', 'couldn't help but', or 'hung heavy in the air'? Ignore words inside quotation marks.",
+      "true": "At least one narration line contains a recognizable cliche.",
+      "false": "No narration line contains a cliche.",
+      "threshold": 0.5
+    },
+    {
+      "id": "filter_hedge",
+      "instructions": "Does any narration line of `document` filter the scene through seemed, appeared, noticed, as if, somehow, or a similar hedge? Ignore words inside quotation marks.",
+      "true": "At least one narration line hedges or filters what happened.",
+      "false": "Narration states events directly.",
+      "threshold": 0.5
+    },
+    {
+      "id": "rule_of_three",
+      "instructions": "Does any narration line of `document` contain a decorative list of exactly three parallel items used for rhythm? Ignore words inside quotation marks.",
+      "true": "At least one narration line has a three-item rhythmic list.",
+      "false": "No narration line has a decorative triple.",
+      "threshold": 0.5
+    },
+    {
+      "id": "tidy_ending",
+      "instructions": "Does any narration line of `document` sum up, moralize, or resolve the moment with a neat symbolic gesture? Ignore words inside quotation marks.",
+      "true": "At least one narration line tells the reader what the moment meant.",
+      "false": "No narration line sums the moment up.",
+      "threshold": 0.5
+    },
+    {
+      "id": "emotion_explained",
+      "instructions": "Does any narration line of `document` name a feeling or a wish outright? Ignore words inside quotation marks.",
+      "true": "At least one narration line names an emotion or a wish.",
+      "false": "No narration line names an emotion or a wish.",
+      "threshold": 0.5
+    },
+    {
+      "id": "sensory_listing",
+      "instructions": "Does any narration line of `document` stack two or more sensory details for atmosphere? Ignore words inside quotation marks.",
+      "true": "At least one narration line catalogs smells, sounds, or textures.",
+      "false": "No narration line catalogs sensory details.",
+      "threshold": 0.5
+    },
+    {
+      "id": "not_x_but_y",
+      "instructions": "Does any narration line of `document` deny one thing to assert another for effect ('not X but Y', 'it wasn't X, it was Y', 'instead')? Ignore words inside quotation marks.",
+      "true": "At least one narration line uses denial-then-assertion contrast.",
+      "false": "No narration line uses that contrast.",
+      "threshold": 0.5
+    },
+    {
+      "id": "generic_detail",
+      "instructions": "Does any narration line of `document` use a vague placeholder (something, a certain, in a way) where a concrete noun belongs? Ignore words inside quotation marks.",
+      "true": "At least one narration line leans on a vague placeholder.",
+      "false": "Narration details are concrete.",
+      "threshold": 0.5
+    },
+    {
+      "id": "portentous_abstraction",
+      "instructions": "Does any narration line of `document` gesture at time, memory, the past, silence, or loss in abstract quotable language? Ignore words inside quotation marks.",
+      "true": "At least one narration line is an aphorism about a theme.",
+      "false": "No narration line reaches for a theme that way.",
+      "threshold": 0.5
+    },
+    {
+      "id": "mirrored_lines",
+      "instructions": "Do any narration lines of `document` repeat an opening or a sentence shape for rhetorical effect? Ignore words inside quotation marks.",
+      "true": "At least one narration line mirrors a neighbor.",
+      "false": "No narration line mirrors a neighbor.",
+      "threshold": 0.5
+    },
+    {
+      "id": "gesture_beat",
+      "instructions": "Does any narration line of `document` do filler stage business (a nod, a look away, a thumb, a breath) that does not move the story? Ignore words inside quotation marks.",
+      "true": "At least one narration line is a filler gesture.",
+      "false": "No narration line is filler stage business.",
+      "threshold": 0.5
+    },
+    {
+      "id": "uniform_rhythm",
+      "instructions": "Do most narration sentences in `document` have similar length and the same subject-verb shape, giving a flat, uniform rhythm?",
+      "true": "Sentence lengths and shapes barely vary; many start the same way.",
+      "false": "Sentence length and structure vary noticeably.",
+      "threshold": 0.5
+    },
+    {
+      "id": "tidy_ending_page",
+      "instructions": "Does the passage END on a summing-up, moral, or neat symbolic resolving gesture? Judge only the last one to three sentences. Ignore words inside quotation marks.",
+      "true": "The passage ends on a summary, a moral, or a neat symbolic gesture that resolves the moment.",
+      "false": "The passage ends on action, dialogue, or a concrete image that does not sum the moment up.",
+      "threshold": 0.5
+    },
+    {
+      "id": "instead_contrast_page",
+      "instructions": "Does a line use 'Instead, she...' / 'Instead of X, Y' contrast framing? Ignore words inside quotation marks.",
+      "true": "A narration line opens with or contains an Instead-contrast.",
+      "false": "No narration line uses Instead as a contrast frame.",
+      "threshold": 0.5
+    }
+  ]
+}
