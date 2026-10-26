@@ -125,6 +125,87 @@ def check_pov(sid, text, facts):
     return out
 
 
+_HEDGE = re.compile(r"\b(?:may|might|could|possibly|potentially|perhaps)\b", re.I)
+_PACKED = re.compile(r"\bthe (streak|pull|badge|feed|glow|signal)\b(?!\s+of\b)", re.I)
+_BREAK = re.compile(r"\s*(?:\* \* \*|={3,}|#+.*)\s*")
+
+
+def check_hedge_and_packed(sid, text, facts):
+    """Code candidates for the hedge-stack and packed-noun Jev questions. Narration only."""
+    out = []
+    for s in sentences(text):
+        if s.startswith('"') or s.startswith("\u201c"):
+            continue
+        hedges = _HEDGE.findall(s)
+        if len(hedges) >= 2:
+            out.append({"check": "hedge_stack", "section": sid, "evidence": s[:200], "severity": 2,
+                        "detail": "hedge stack: " + ", ".join(hedges[:4]),
+                        "bible": "No hedge stacks. Say who does what."})
+        m = _PACKED.search(s)
+        if m:
+            out.append({"check": "packed_noun", "section": sid, "evidence": m.group(0)[:200], "severity": 2,
+                        "detail": "packed noun without a referent",
+                        "bible": "Name the thing. Do not leave a short noun to imply a whole contrast."})
+    return out
+
+
+def _norm_para(p: str) -> str:
+    return " ".join((p or "").split())
+
+
+def paragraph_section_ids(text: str, sections: list[dict]) -> dict[int, str]:
+    """Map a detector paragraph index on ``text`` to the screen section that contains it."""
+    from bookforge.core.detector import split_paragraphs
+    want = []
+    for s in sections:
+        for p in split_paragraphs(s["text"]):
+            if not _BREAK.fullmatch(p):
+                want.append((s["sid"], _norm_para(p)))
+    mapping, wi = {}, 0
+    for i, p in enumerate(split_paragraphs(text)):
+        if _BREAK.fullmatch(p):
+            continue
+        norm = _norm_para(p)
+        if wi < len(want) and want[wi][1] == norm:
+            mapping[i] = want[wi][0]
+            wi += 1
+            continue
+        for j in range(wi, min(wi + 4, len(want))):
+            if want[j][1] == norm:
+                mapping[i] = want[j][0]
+                wi = j + 1
+                break
+    return mapping
+
+
+def deai_candidates(text: str, sections: list[dict], names: list[str] | None = None,
+                    allow: list[str] | None = None) -> list[dict]:
+    """Detector and lint hits at or above deai.min_severity, one code candidate per located hit.
+
+    polished_intro and parallel_list_ending are structural: the screen keeps them only when Jev
+    confirms, unless Jev is unavailable and the hit is severity >= 2.
+    """
+    from bookforge.core.deai import located_hits
+    mapping = paragraph_section_ids(text, sections)
+    out = []
+    for h in located_hits(text, names, allow):
+        sid = mapping.get(h["para"])
+        if not sid:
+            needle = _norm_para(h.get("span") or "")
+            if len(needle) < 4:
+                needle = _norm_para(h.get("paragraph") or "")[:80]
+            for s in sections:
+                if needle and needle.lower() in _norm_para(s["text"]).lower():
+                    sid = s["sid"]
+                    break
+        if not sid:
+            continue
+        out.append({"check": h["rule"], "section": sid, "evidence": (h.get("span") or "")[:200],
+                    "detail": h.get("reason") or h["rule"], "bible": h.get("fix") or "",
+                    "severity": h["severity"], "scene": h.get("scene"), "para": h["para"]})
+    return out
+
+
 def check_tells(sid, text, facts):
     out = []
     ss = sentences(text)
@@ -201,6 +282,6 @@ def character_lines(sections: list[dict], who: str, scenes: set[int] | None = No
 def run(sections: list[dict], facts: dict) -> list[dict]:
     out = []
     for s in sections:
-        for fn in (check_times, check_sessions, check_pov, check_tells):
+        for fn in (check_times, check_sessions, check_pov, check_tells, check_hedge_and_packed):
             out += fn(s["sid"], s["text"], facts)
     return out

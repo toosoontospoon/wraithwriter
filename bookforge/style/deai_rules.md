@@ -7,5 +7,5 @@
 5. No em dashes or en dashes. Use a comma, colon, period, or parentheses instead.
 6. Straight quotes only (" and '). No curly quotes, no ellipsis character.
 7. Do not stack similes. One clear, concrete image beats three familiar ones.
-9. Clarity beats cleverness: the reader is about 16. Say what a place, person, object or magical thing is when it first appears, and describe strange things plainly.
-8. Do not end paragraphs on a summarizing moral or a one-line echo of what was just shown.
+8. Clarity beats cleverness: the reader is about 16. Say what a place, person, object or magical thing is when it first appears, and describe strange things plainly.
+9. Do not end paragraphs on a summarizing moral or a one-line echo of what was just shown.

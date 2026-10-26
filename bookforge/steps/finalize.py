@@ -5,6 +5,7 @@ from pydantic import Field
 
 from bookforge.core import progress
 from bookforge.core.io import atomic_write_text, read_json
+from bookforge.core.deai import scrub
 from bookforge.core.llm import llm_call
 from bookforge.core.schema import _Loose
 
@@ -37,7 +38,8 @@ def run(ctx, force: bool = False):
 PREMISE: {ctx.metadata.get('prompt')}
 BOOK: {summaries.get('book', {}).get('text') or json.dumps(summaries['chapters'])[:6000]}
 Output ONLY JSON: {{"title": "...", "blurb": "..."}}""", role="summary", schema=TitleBlurb, max_tokens=800)
-    parts = [tb.title.upper(), "=" * len(tb.title), ""]
+    title, blurb = scrub(tb.title), scrub(tb.blurb)
+    parts = [title.upper(), "=" * len(title), ""]
     stats, total = [], 0
     for i, ch in enumerate(outline, 1):
         text = ctx.best_chapter_text(ch["id"]).strip()
@@ -48,9 +50,9 @@ Output ONLY JSON: {{"title": "...", "blurb": "..."}}""", role="summary", schema=
     final = "\n".join(parts)
     atomic_write_text(ctx.project_dir / "final_manuscript.txt", final)
     (step_dir / "final_manuscript.txt").write_text(final)
-    (step_dir / "stats.json").write_text(json.dumps({"title": tb.title, "blurb": tb.blurb, "chapters": stats,
+    (step_dir / "stats.json").write_text(json.dumps({"title": title, "blurb": blurb, "chapters": stats,
                                                      "total_words": total, "chapter_count": len(stats)}, indent=2))
-    ctx.metadata["title"], ctx.metadata["blurb"] = tb.title, tb.blurb
+    ctx.metadata["title"], ctx.metadata["blurb"] = title, blurb
     ctx.save_json("metadata.json", ctx.metadata)
     progress.record(ctx, "finalize", inputs=inputs)
     print(f"Final manuscript: {ctx.project_dir / 'final_manuscript.txt'} ({len(stats)} chapters, {total} words)")

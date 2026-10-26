@@ -1,0 +1,22 @@
+{
+  "date": "2026-10-26",
+  "note": "Fiction mode is a local patch on the vendored scrubber: dialogue dashes, comma joins, and number ranges. Prose mode output stays byte-identical to upstream. rules_extract.md holds only the Banlist, Packed ambiguous nouns, and Sentence rules (locked) sections.",
+  "sources": {
+    "skill": {
+      "path": "skills/de-ai-revision/SKILL.md",
+      "sha256": "5f7c8c3460f126adc9554a9fbf6855d8a01c7a1b42c5c0cfcfac08cc023b6ea3"
+    },
+    "scrub": {
+      "path": "skills/token-scrub/scrub.py",
+      "sha256": "1ef87b93fc769c0e00b83a7663bd296e1a0400ac2cb9f1d6b58f2e6e64b28400"
+    }
+  },
+  "files": {
+    "bookforge/style/vendor/token_scrub/scrub.py": {
+      "sha256": "aa295e9e559e8baba8c7504128da187af7305855d3c61605d390f198f89c1ec4"
+    },
+    "bookforge/style/vendor/de-ai-revision/rules_extract.md": {
+      "sha256": "c6e8c20d91fd58f23762d45ebada1e8a4658a4e6a7ec2d6710f9f19c2ac5ccb2"
+    }
+  }
+}

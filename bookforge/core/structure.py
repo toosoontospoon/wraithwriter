@@ -222,6 +222,35 @@ def _chnum(cid: str) -> int:
     return int(m.group(1)) if m else 10 ** 6 if str(cid or "").startswith("book") else -1
 
 
+def prose_tells(chapter: dict) -> list[tuple[str, dict]]:
+    """skill_banlist and contrast-frame hits in outline prose fields that seed the draft."""
+    from bookforge.core.detector import detect
+    fields: list[tuple[str, str]] = []
+    st = get(chapter)
+    for key in ("plot_function", "a_purpose", "b_purpose"):
+        val = st.get(key) or ""
+        if isinstance(val, str) and val.strip():
+            fields.append((key, val))
+    summary = chapter.get("summary") or ""
+    if isinstance(summary, str) and summary.strip():
+        fields.append(("summary", summary))
+    for sc in chapter.get("scenes") or []:
+        if not isinstance(sc, dict):
+            continue
+        beats = sc.get("beats") or []
+        if isinstance(beats, str):
+            beats = [beats]
+        for beat in beats:
+            if isinstance(beat, str) and beat.strip():
+                fields.append(("beats", beat))
+    found = []
+    for field, text in fields:
+        for hit in detect(text)["hits"]:
+            if hit["rule"] == "skill_banlist" or hit["category"] == "contrast_frame":
+                found.append((field, hit))
+    return found
+
+
 def check(outline: list[dict], threads: list[dict] | None = None, words: dict[str, int] | None = None,
           run_limit: int = 3, dup_threshold: float = 0.6) -> list[dict]:
     """Lint the structure blocks. Returns issues {severity: FAIL|WARN|INFO, chapter, check, description}."""
@@ -234,7 +263,7 @@ def check(outline: list[dict], threads: list[dict] | None = None, words: dict[st
     pos = positions(outline, words)
     S = [(c["id"], get(c)) for c in outline]
 
-    for cid, s in S:
+    for c, (cid, s) in zip(outline, S):
         if not s["plot_function"].strip():
             add("FAIL", cid, "plot_function", "no plot_function: say what changes in the A or B plot that would not happen otherwise")
         vt = s["value_turn"] or {}
@@ -269,6 +298,8 @@ def check(outline: list[dict], threads: list[dict] | None = None, words: dict[st
         for b in filter(None, s["save_the_cat"].split("+")):
             if b in SAVE_THE_CAT and p is not None and abs(p - SAVE_THE_CAT[b]) > 12:
                 add("WARN", cid, "beat_position", f"{b} at {p:.0f}% (target ~{SAVE_THE_CAT[b]}%)")
+        for field, hit in prose_tells(c):
+            add("WARN", cid, "prose_tell", f"{field}: {hit['rule']} ({hit['span'][:80]})")
 
     # neighbouring duplicates
     for (c1, s1), (c2, s2) in zip(S, S[1:]):

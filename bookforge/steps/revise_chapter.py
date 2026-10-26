@@ -10,6 +10,7 @@ import re
 from bookforge.config import load_config
 from bookforge.craft import engine as craft
 from bookforge.core import canon_pipeline, progress
+from bookforge.core import deai
 from bookforge.core.deai import scrub, split_paragraphs
 from bookforge.core.io import read_json
 from bookforge.core.llm import llm_call
@@ -115,9 +116,10 @@ def run(ctx, chapter_id: str):
     revised = split_scenes(edited)
     if len(revised) != len(scenes):  # editor merged/split scenes: keep text, map what we can
         print(f"   [warn] editor returned {len(revised)} scenes for {len(scenes)}; scene files approximate")
+    rev_text = deai.scrub(_efl(chapter, join_scenes(revised)))
+    revised = split_scenes(rev_text)
     for sc, t in zip(scenes, revised):
         ctx.write_text(ctx.scene_path(chapter_id, sc.get("scene_number"), "revised"), t)
-    rev_text = _efl(chapter, join_scenes(revised))
     ctx.write_text(ctx.chapter_path(chapter_id, "revised"), rev_text)
     (step_dir / "revised.txt").write_text(rev_text)
     print(f"   editor pass: {'accepted' if erep.get('accepted') else 'rejected (' + erep.get('reason', '') + ')'}, "

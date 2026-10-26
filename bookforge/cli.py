@@ -179,7 +179,9 @@ def review_resolve(project, item_id, decision, fix):
               help="Dir with style_bible.md/voices (allowlist + cast names)")
 @click.option("--json", "as_json", is_flag=True, help="Machine-readable output")
 @click.option("--fix", is_flag=True, help="Print text after safe autofix (token scrub) instead of a report")
-def detect(path, style_dir, as_json, fix):
+@click.option("--fail-on", "fail_on", default=None, type=int,
+              help="Exit 1 if any hit has severity >= N, any token tell remains, or fragment_budget is flagged")
+def detect(path, style_dir, as_json, fix, fail_on):
     """Run the deterministic AI-tell detector on a file (or stdin). No LLM calls."""
     import sys
     from bookforge.core import detector, style_bible
@@ -191,6 +193,14 @@ def detect(path, style_dir, as_json, fix):
         click.echo(detector.autofix(text)[0])
         return
     rep = detector.detect(text, sb.allowlist(), names)
+    if fail_on is not None:
+        from bookforge.core.deai import count_token_tells
+        click.echo(detector.family_summary(rep, text))
+        bad = (any(h["severity"] >= fail_on for h in rep["hits"]) or bool(count_token_tells(text))
+               or "fragment_budget" in rep.get("flags", []))
+        if bad:
+            raise SystemExit(1)
+        return
     if as_json:
         click.echo(json.dumps({k: v for k, v in rep.items() if k != "flagged_paragraphs"}, indent=2))
     else:

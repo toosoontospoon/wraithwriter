@@ -210,6 +210,8 @@ Output ONLY JSON: {{"events": [{{"kind": "...", "ref": "...", "quote": "...", "d
         for i in m.observe(L.module(m.name), kept, src, L, P):
             issues.append({**i, "module": m.name})
     text_out = apply_actions(ctx, L, issues, src, text)
+    from bookforge.core.deai import scrub
+    text_out = scrub(text_out)
     L.save(f"scene {chapter_id}:{sn}")
     rep = {"events": len(kept), "dropped_unverified": dropped, "issues": issues, "text": text_out}
     if step_dir:

@@ -9,7 +9,7 @@ from pydantic import Field
 
 from bookforge.core import canon_pipeline, progress
 from bookforge.craft import engine as craft
-from bookforge.core.deai import scrub
+from bookforge.core.deai import scrub, scrub_obj
 from bookforge.core.io import stable_hash
 from bookforge.core.llm import llm_call
 from bookforge.core.schema import _Loose
@@ -50,7 +50,8 @@ SELF-CHECK before answering: re-read the continuity sheet and the earlier chapte
 
 Output ONLY JSON: {{"beats": ["(~280w, dialogue) ..."]}}""", system=pack.system_for(ctx, chapter), role="plan",
                    schema=BeatSheet, max_tokens=6000, temperature=0.3, raw_dir=step_dir)
-    return res.beats or scene.get("beats") or [scene.get("action", "Write the scene.")]
+    beats = res.beats or scene.get("beats") or [scene.get("action", "Write the scene.")]
+    return scrub_obj(beats)
 
 
 def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
@@ -103,7 +104,7 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
     if not sp.get("craft"):
         rep = craft.process_scene(ctx, chapter["id"], scene, text, step_dir)
         if rep["text"] != text:  # verbatim autofixes (e.g. prophecy wording)
-            text = rep["text"]
+            text = scrub(rep["text"])
             ctx.write_text(path, text)
         sp["craft"] = {"events": rep["events"], "issues": len(rep["issues"])}
         ctx.save_progress()

@@ -20,7 +20,7 @@
   category: lexicon
   kind: word
   severity: 3
-  where: any
+  where: narration
   patterns: [delve, delves, delved, delving, tapestry, tapestries, testament, symphony, kaleidoscope,
     myriad, multifaceted, labyrinthine, ministrations, palpable, indelible, gossamer, ethereal,
     bioluminescent, cacophony, interplay, intricate, intricately, meticulous, meticulously,
@@ -32,7 +32,7 @@
   category: lexicon
   kind: word
   severity: 1
-  where: any
+  where: narration
   patterns: [resonate, resonated, resonating, reverberate, reverberated, echoed, etched, shimmered,
     shimmering, glinted, glinting, gleamed, twinkled, sparkled, thrummed, thrumming, pulsed, pulsing,
     tendrils, nestled, wafted, lingered, beacon, realm, embark, embarked, journey, navigate,
@@ -53,7 +53,7 @@
   category: stock_phrase
   kind: regex
   severity: 3
-  where: any
+  where: narration
   patterns: ['\b(a |the )?(dance|symphony|orchestra|tapestry|kaleidoscope|ballet) of\b']
   fix: Remove the "a dance/symphony of X" construction. Describe the actual motion or sound.
 
@@ -61,7 +61,7 @@
   category: stock_phrase
   kind: regex
   severity: 3
-  where: any
+  where: narration
   patterns: ['\bthe (weight|gravity|enormity) of (it|this|that|his|her|their|the|what|everything)\b', '\bweight of (the|his|her|their) (words|gaze|stare|silence|decision|world)\b', '\bthe weight of (a|an|every|all|so many) [\w-]+ ?(eyes|stares|gazes|years|expectations|generations)?\b']
   fix: Replace "the weight of X" with a physical action or a concrete consequence.
 
@@ -69,7 +69,7 @@
   category: stock_phrase
   kind: regex
   severity: 3
-  where: any
+  where: narration
   patterns: ['\bsomething (shifted|changed|broke|cracked|snapped|clicked|settled|stirred|flickered) (in|inside|within|between|behind)\b', '\bsomething (shifted|changed)\b']
   fix: Name what changed and show it in an action or line of dialogue.
 
@@ -85,7 +85,7 @@
   category: stock_phrase
   kind: regex
   severity: 3
-  where: any
+  where: narration
   patterns: ['\b(the |his |her |that |those )?(words?|question|joke|insult|comment|truth|realization|news) (land|lands|landed|hit|hits|struck|settled|sank in)\b', '\blanded like a (blow|slap|punch|stone)\b', '\bthat landed\b']
   fix: Cut "the words landed/hit". Show the listener's reaction directly.
 
@@ -93,7 +93,7 @@
   category: stock_phrase
   kind: regex
   severity: 3
-  where: any
+  where: narration
   patterns: ['\b(hit|struck|felt it|landed) like a (physical )?(blow|punch|fist|slap)\b', '\blike a punch to the (gut|stomach|chest)\b', '\bhit (him|her|them) like (ice water|a wave|a truck|a freight train)\b']
   fix: Replace the "hit like a blow" simile with a specific bodily or behavioral reaction.
 
@@ -343,6 +343,28 @@
   where: narration
   fix: Verbless sentence fragment in narration. Make it a complete sentence unless it is a deliberate rare beat.
 
+- id: polished_intro
+  category: scene_shape
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Polished thesis opener. Start the chapter or scene inside a concrete moment, action, line of dialogue, or sensory detail. Do not open by defining or summarising the place.
+
+- id: parallel_list_ending
+  category: scene_shape
+  kind: structural
+  severity: 2
+  where: narration
+  fix: Tidy parallel-list ending. Close on an action, an image, or a line of dialogue. Do not end on anaphora, an "N things" list, or a tricolon summary.
+
+- id: soft_contrast
+  category: contrast_frame
+  kind: regex
+  severity: 2
+  where: narration
+  patterns: [', not \w+', '\brather than\b', '\binstead of\b']
+  fix: Soft contrast ("X, not Y", "rather than X, Y", or "instead of X, Y"). State the thing directly and drop the rejected alternative.
+
 - id: stock_names
   category: names
   kind: word
@@ -364,8 +386,8 @@
   category: filler
   kind: regex
   severity: 3
-  where: any
-  patterns: ['\bit''s (important|worth) (to note|noting|remembering)\b', '\bin conclusion\b', '\bin summary\b', '\bultimately,\b', '\bat the end of the day\b', '\bin today''s\b', '\bcertainly!\b', '\bof course!\b', '\bi hope this\b', '\bas an ai\b']
+  where: narration
+  patterns: ['\bit''s (important|worth) (to note|noting|remembering)\b', '\bit is important to note\b', '\bin conclusion\b', '\bin summary\b', '\bultimately,', '\bat the end of the day\b', '\bin today''s\b', '\bcertainly!', '\bof course!', '\bi hope this\b', '\bas an ai\b']
   fix: Assistant/essay register leaked into fiction. Delete.
 
 - id: chapter_echo_title

@@ -49,7 +49,11 @@ def test_pipeline_wiring():
     rsrc = inspect.getsource(revise_chapter)  # edit_chapter is called from _edit (screen fallback)
     assert "editor.edit_chapter" in rsrc and "revoice" not in rsrc
     dsrc = inspect.getsource(deai_chapter)
-    assert "rewrite_flagged" not in dsrc and "rolled_back" in dsrc and "check_obligations" in dsrc
+    # rewrite_flagged is gated by deai.rewrite_residual, which defaults off (no extra LLM call).
+    assert "rewrite_residual" in dsrc and "rewrite_flagged" in dsrc
+    assert dsrc.index("rewrite_residual") < dsrc.index("rewrite_flagged")
+    assert C.DEFAULT_CONFIG["deai"]["rewrite_residual"] is False
+    assert "rolled_back" in dsrc and "check_obligations" in dsrc
     from bookforge.steps import write_chapter
     assert "pack.build_write" in inspect.getsource(write_chapter.write_scene)
 

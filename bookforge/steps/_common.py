@@ -4,6 +4,7 @@ from __future__ import annotations
 import json
 import re
 
+from bookforge.core.deai import scrub
 from bookforge.core.llm import llm_call
 
 SCENE_BREAK = "\n\n* * *\n\n"
@@ -23,7 +24,7 @@ def summarize(text: str, what: str, words: int = 120) -> str:
     prompt = (f"You are a continuity editor. Summarize this {what} in about {words} words for the writing team. "
               "Cover key events in order (names, places, actions), what each character learned or changed, "
               "new information, and where everyone is at the end. Plain factual prose.\n\nTEXT:\n" + text)
-    return llm_call(prompt, role="summary", max_tokens=words * 3, temperature=0.2).strip()
+    return scrub(llm_call(prompt, role="summary", max_tokens=words * 3, temperature=0.2).strip())
 
 
 def join_scenes(texts: list[str]) -> str:

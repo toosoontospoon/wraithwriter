@@ -262,10 +262,12 @@ PERSONA = ("You are the author and editorial team of an novel described in the s
 
 def system_for(ctx, chapter: dict | None = None) -> str:
     """ONE system prompt for every call type and every chapter (byte-identical, so it caches book-wide):
-    persona, rule card, the human bible files, confirmed facts. Nothing chapter- or call-specific."""
+    persona, rule card, prose rules, the human bible files, confirmed facts.
+    Nothing chapter- or call-specific. The prose-rules block is a constant when the flag is on."""
+    from bookforge.core.deai import prose_rules_block
     sp = stable_pack(ctx, chapter or {})
     cc = confirmed_canon(ctx)
-    return "\n\n".join(x for x in (PERSONA, RULE_CARD, sp, cc) if x)
+    return "\n\n".join(x for x in (PERSONA, RULE_CARD, prose_rules_block(), sp, cc) if x)
 
 
 def notes_block(ctx, chapter: dict, scene: dict | None = None) -> str:

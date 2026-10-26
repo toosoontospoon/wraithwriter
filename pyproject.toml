@@ -21,7 +21,7 @@ bookforge = "bookforge.cli:main"
 include = ["bookforge*"]
 
 [tool.setuptools.package-data]
-bookforge = ["style/*", "jev_templates/*.json"]
+bookforge = ["style/*", "style/*/*", "style/*/*/*", "style/*/*/*/*", "jev_templates/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

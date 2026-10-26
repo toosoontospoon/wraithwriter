@@ -113,11 +113,19 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "reextract_after_revise": True,
     },
     "revise": {"recritique": True, "max_passes": 1},
-    # Anti-AI pass: detector (style/ai_tells.yaml) then cheap LLM rewrite of flagged paragraphs only.
-    "deai": {"max_flag_ratio": 0.0, "max_loops": 2, "min_severity": 2, "cluster": 3},
+    # Anti-AI pass. Detector hits ride the existing editor. The residual LLM rewrite is off
+    # unless deai.rewrite_residual is true. external_detector is report-only (no key in the repo).
+    "deai": {"max_flag_ratio": 0.0, "max_loops": 2, "min_severity": 2, "cluster": 3,
+             "fail_on_tokens": True, "fragment_max_ratio": 0.02, "dash_policy": "fiction",
+             "prompt_rules": True, "route_to_editor": True, "max_findings": 40,
+             "edit_guard": "section", "max_tell_drop": 0.5, "rewrite_residual": False,
+             "external_detector": {"provider": "none", "api_key_env": "PANGRAM_API_KEY",
+                                   "cap_usd": 1.0, "mode": "report"}},
     # Post-draft screen (core/screen.py): code checks + Jev (TypeSafe System One, key TYPESAFE_API_KEY)
-    # flag sections; the revise editor then reads only a revision packet. Off by default; see README.
-    "screen": {"enabled": False, "jev": True, "model": "jev-1.13.0", "section_words": 600,
+    # flag sections; the revise editor then reads only a revision packet. On by default; without
+    # TYPESAFE_API_KEY the code checks still run and Jev is skipped. See README.
+    "screen": {"enabled": True, "jev": True, "deai_questions": True, "model": "jev-1.13.0",
+               "section_words": 600,
                "cap_usd": 1.0, "skip_edit_if_clean": True, "fallback_full_edit": True,
                "packet_system_files": ["style_bible.md"], "facts_dir": "", "timetable_file": "",
                "subjects": [], "session_subjects": {}, "afternoon_only": [], "event_times": {},

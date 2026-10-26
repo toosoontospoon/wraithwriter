@@ -23,11 +23,19 @@ from bookforge.core import facts as facts_mod
 from bookforge.core import jev, screen_checks
 
 TEMPLATE = Path(__file__).resolve().parent.parent / "jev_templates" / "chapter_section_screen.json"
-DEFAULTS = {"enabled": False, "jev": True, "model": "jev-1.13.0", "section_words": 600, "workers": 4,
-            "cap_usd": 1.0, "skip_edit_if_clean": True, "fallback_full_edit": True,
+DEFAULTS = {"enabled": True, "jev": True, "deai_questions": True, "model": "jev-1.13.0", "section_words": 600,
+            "workers": 4, "cap_usd": 1.0, "skip_edit_if_clean": True, "fallback_full_edit": True,
             "packet_system_files": ["style_bible.md"], "context_paras": 1}
-# regex AI-tell checks are candidates only: with Jev they are kept only where Jev agrees
-SOFT = {"rule_of_three": "ai_rule_of_three", "mirrored": "ai_mirrored_lines", "epigram_closer": "ai_tidy_closer"}
+# Structural / regex AI-tell checks are candidates only: with Jev they are kept only where Jev agrees.
+# When Jev is unavailable, severity >= 2 candidates stay (checks with no severity stay too).
+SOFT = {"rule_of_three": "ai_rule_of_three", "mirrored": "ai_mirrored_lines", "epigram_closer": "ai_tidy_closer",
+        "polished_intro": "ai_polished_intro", "parallel_list_ending": "ai_parallel_list_ending"}
+# Any of these on a section lowers that question from flag_at to flag_with_code_at. Not all are dropped.
+CODE_LINK = {**SOFT, "soft_contrast": "ai_soft_contrast", "hedge_stack": "ai_hedge_stack",
+             "packed_noun": "ai_packed_noun", "unclear_referent": "ai_unclear_agency",
+             "unclear_agency": "ai_unclear_agency"}
+DEAI_QUESTIONS = ("ai_packed_noun", "ai_hedge_stack", "ai_soft_contrast", "ai_unclear_agency",
+                  "ai_polished_intro", "ai_parallel_list_ending")
 _PH = re.compile(r"\{\{(\w+)\}\}")
 
 
@@ -101,12 +109,28 @@ def _section_vars(facts, s):
             "known_characters": facts.get("known_characters", {}), "beat_criteria": crit}
 
 
+def _questions_for(t, c, s, sections):
+    """Per-section question set. De-AI questions ride this same call; two of them are positional."""
+    qs = copy.deepcopy(t["questions"])
+    if not c.get("deai_questions", True):
+        for q in DEAI_QUESTIONS:
+            qs.pop(q, None)
+        return qs
+    scene = [x for x in sections if x["scene"] == s["scene"]]
+    if scene and s["sid"] != scene[0]["sid"]:
+        qs.pop("ai_polished_intro", None)
+    if scene and s["sid"] != scene[-1]["sid"]:
+        qs.pop("ai_parallel_list_ending", None)
+    return qs
+
+
 def jev_sections(sections, facts, c, log_dir):
     t = json.loads(TEMPLATE.read_text())
 
     def one(s):
         v = _section_vars(facts, s)
-        res = jev.ask(_fill(t["state"], v), _fill(t["questions"], v), model=c["model"], tag=f"screen:{s['sid']}",
+        qs = _questions_for(t, c, s, sections)
+        res = jev.ask(_fill(t["state"], v), _fill(qs, v), model=c["model"], tag=f"screen:{s['sid']}",
                       log_dir=log_dir, cap_usd=c["cap_usd"])
         return s["sid"], res
 
@@ -142,10 +166,28 @@ def _locate(sections, quote: str):
     return sections[i]["sid"] if i is not None else None
 
 
-def critique_flags(ctx, chapter, sections, crit):
+def _keep_when_jev_down(flags: dict) -> None:
+    """Jev did not score the chapter. Drop structural candidates under severity 2.
+
+    Older regex tells have no severity and stay, as they did when the key was missing.
+    Severity >= 2 code hits stay, including polished_intro and parallel_list_ending.
+    """
+    for sid, fl in flags.items():
+        kept = []
+        for f in fl:
+            if f.get("source") == "code" and f.get("check") in SOFT:
+                sev = f.get("severity")
+                if sev is not None and int(sev) < 2:
+                    continue
+                f["unconfirmed"] = True
+            kept.append(f)
+        flags[sid] = kept
+
+
+def critique_flags(ctx, chapter, sections, crit, text: str | None = None):
     from bookforge.core import editor
     located, chapter_level = [], []
-    fx = editor.findings(ctx, chapter["id"], crit or {}, chapter) if crit is not None else []
+    fx = editor.findings(ctx, chapter["id"], crit or {}, chapter, text) if crit is not None else []
     for f in fx:
         m = re.search(r'AT "([^"]{8,})"', f)
         sid = _locate(sections, m.group(1)) if m else None
@@ -168,7 +210,17 @@ def run(ctx, chapter: dict, text: str, crit: dict | None = None, step_dir: Path 
     sections = split_sections(text, int(c["section_words"]))
     flags: dict[str, list] = {s["sid"]: [] for s in sections}
 
+    allow, names = None, None
+    if hasattr(ctx, "cast_names"):
+        names = ctx.cast_names()
+    if hasattr(ctx, "style"):
+        try:
+            allow = ctx.style().allowlist()
+        except Exception:
+            allow = None
     for f in screen_checks.run(sections, facts):                       # 1. code
+        flags[f["section"]].append({**f, "source": "code"})
+    for f in screen_checks.deai_candidates(text, sections, names, allow):
         flags[f["section"]].append({**f, "source": "code"})
     new_people = screen_checks.new_people_per_scene(sections, facts)
     chapter_level = []
@@ -184,15 +236,17 @@ def run(ctx, chapter: dict, text: str, crit: dict | None = None, step_dir: Path 
     log_dir = ctx.state_dir
     if not want:
         jev_status = "skipped: disabled"
+        _keep_when_jev_down(flags)
     elif not jev.available():
         jev_status = f"skipped: {jev.KEY_ENV} not set"
+        _keep_when_jev_down(flags)
     else:
         try:                                                           # 2. Jev
             answers, t = jev_sections(sections, facts, c, log_dir)
             counts = jev_count_rules(sections, facts, c, log_dir)
             th = t["thresholds"]
-            soft_hit = {(sid, SOFT[f["check"]]) for sid, fl in flags.items() for f in fl
-                        if f["source"] == "code" and f["check"] in SOFT}
+            soft_hit = {(sid, CODE_LINK[f["check"]]) for sid, fl in flags.items() for f in fl
+                        if f["source"] == "code" and f["check"] in CODE_LINK}
             for sid, res in answers.items():
                 for q, rule in th.items():
                     p = jev.noul(res, q) if isinstance(rule, dict) else None
@@ -230,10 +284,7 @@ def run(ctx, chapter: dict, text: str, crit: dict | None = None, step_dir: Path 
                 flags[sid] = keep
         except jev.JevUnavailable as e:
             jev_status, answers, counts = f"skipped: {e}", {}, []
-            for fl in flags.values():
-                for f in fl:
-                    if f["source"] == "code" and f["check"] in SOFT:
-                        f["unconfirmed"] = True
+            _keep_when_jev_down(flags)
 
     for s in sections:                                                 # beat map
         ps = (facts.get("plan_scenes") or {}).get(plan_scene_of(facts, s["scene"])) or {}
@@ -245,8 +296,15 @@ def run(ctx, chapter: dict, text: str, crit: dict | None = None, step_dir: Path 
                               "beat": b, "beat_text": (ps.get("beats") or {}).get(b, "") if b else "",
                               "confidence": round(conf, 2), "opens": " ".join(s["text"].split()[:14])}
 
-    located, cl = critique_flags(ctx, chapter, sections, crit)          # editor findings
+    located, cl = critique_flags(ctx, chapter, sections, crit, text)    # editor findings
     for f in located:
+        rule_m = re.search(r"RULE ([A-Za-z0-9_]+)", f.get("detail") or "")
+        rule = rule_m.group(1) if rule_m else ""
+        # Structural rules are admitted only through the code/Jev candidate path above.
+        if rule in SOFT:
+            continue
+        if rule and any(x.get("source") == "code" and x.get("check") == rule for x in flags[f["section"]]):
+            continue
         flags[f["section"]].append(f)
     chapter_level += cl
 
@@ -307,10 +365,11 @@ Output ONLY JSON: {"sections": {"<section id>": "<full edited text of that secti
 
 
 def lean_system(ctx, chapter) -> str:
-    """Persona + rule card + the configured style files (not the whole story pack)."""
+    """Persona + rule card + the same prose-rules block the writer caches, then style files."""
     from bookforge.core import pack
+    from bookforge.core.deai import prose_rules_block
     from bookforge.core.rules_card import RULE_CARD
-    parts = [pack.PERSONA, RULE_CARD]
+    parts = [p for p in (pack.PERSONA, RULE_CARD, prose_rules_block()) if p]
     d = pack.bible_dir(ctx)
     for name in cfg().get("packet_system_files") or []:
         p = Path(d) / name if d else None
@@ -337,6 +396,28 @@ def splice(packet: dict, edits: dict, lo: float = 0.5, hi: float = 1.6) -> tuple
             continue
         by[sid]["text"] = new
         rep["applied"].append(sid)
+    mode, drop = "section", 0.5
+    try:
+        from bookforge.core.editor import _guard_cfg
+        mode, drop = _guard_cfg()
+    except Exception:
+        mode, drop = "section", 0.5
+    if mode == "section" and rep["applied"]:
+        from bookforge.core.detector import detect
+        orig = {s["sid"]: s["text"] for s in packet["sections"]}
+        reverted = []
+        for s in secs:
+            if s["sid"] not in rep["applied"]:
+                continue
+            before, after = detect(orig[s["sid"]])["score"], detect(s["text"])["score"]
+            if after < before - drop:
+                s["text"] = orig[s["sid"]]
+                reverted.append(s["sid"])
+        for sid in reverted:
+            rep["applied"].remove(sid)
+            rep["rejected"][sid] = f"edit guard: detector score dropped by more than {drop}"
+        if reverted:
+            rep["edit_guard_reverted"] = reverted
     return join_sections(secs), rep
 
 

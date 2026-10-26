@@ -3,6 +3,7 @@ import json
 
 from bookforge.core import progress
 from bookforge.core.canon_pipeline import seed_from_plan
+from bookforge.core.deai import scrub_obj
 from bookforge.core.llm import llm_call
 from bookforge.core.schema import normalize_characters, normalize_world
 
@@ -40,6 +41,7 @@ CAST:
 
 Output ONLY JSON: {{"characters": {{"<existing id>": {{"name": "...", "secret": "...", "voice": "...", "current_state": {{"location": "...", "holding": [], "knowledge": [], "emotions": [], "flags": []}}}}}}}}""",
                    role="character_design", json_mode=True, max_tokens=12000, raw_dir=step_dir)
+    raw = scrub_obj(raw)
     (step_dir / "characters_raw.json").write_text(json.dumps(raw, indent=2))
     extra = normalize_characters(raw)
     for cid, c in extra.items():
@@ -56,6 +58,7 @@ WORLD:
 
 Output ONLY the full world JSON with the same keys.""", role="world_design", json_mode=True, max_tokens=10000,
                     raw_dir=step_dir)
+    raww = scrub_obj(raww)
     (step_dir / "world_raw.json").write_text(json.dumps(raww, indent=2))
     world = _merge(world, normalize_world(raww))
     ctx.save_world(world)
