@@ -41,7 +41,8 @@ def test_write_thresholds_updates_a_copy_and_skips_code_checks(tmp_path):
     assert {row["id"]: row["threshold"] for row in tax["code_categories"]}["uniform_rhythm"] == 0.5
     page = {row["id"]: row["threshold"] for row in tax["page_questions"]}
     assert page["tidy_ending_page"] == 0.8
-    assert page["ai_vocab"] == 0.75
+    # Per-category page questions are report-only and keep their own threshold.
+    assert page["ai_vocab"] == json.loads(src.read_text())["page_questions"][0]["threshold"]
     assert "uniform_rhythm" not in updated
     # The planted pages shipped with the repo are the four calibration files, unchanged in shape.
     planted = list((ROOT / "tests" / "fixtures" / "jev_tells").glob("planted_*.json"))

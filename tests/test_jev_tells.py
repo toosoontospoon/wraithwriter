@@ -5,9 +5,22 @@ from bookforge import config
 from bookforge.core import editor, jev, jev_tells, screen
 
 
+_REAL_TAX = jev_tells.load_taxonomy
+
+
+def _flat_taxonomy():
+    """The shipped taxonomy with every threshold at 0.5, so tests do not track calibration."""
+    tax = _REAL_TAX()
+    for group in ("categories", "code_categories", "page_questions"):
+        for row in tax[group]:
+            row["threshold"] = 0.5
+    return tax
+
+
 @pytest.fixture(autouse=True)
 def _no_jev(monkeypatch):
     monkeypatch.delenv("TYPESAFE_API_KEY", raising=False)
+    monkeypatch.setattr(jev_tells, "load_taxonomy", _flat_taxonomy)
     jev.set_fake(None)
     yield
     jev.set_fake(None)

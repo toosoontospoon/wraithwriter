@@ -8,7 +8,7 @@
       "true": "The line uses one of these overused words or a close cousin, for example 'a tapestry of color' or 'a testament to'.",
       "false": "The line uses ordinary plain words, and none of the listed overused words appear.",
       "paraphrase": "Read only line {sid} (other lines are context). Would a copy editor flag it for vocabulary that large language models lean on in fiction, such as a showy abstract noun where a plain word would do? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.9,
       "fix": "Replace the showy word with the plain concrete word the scene would actually use.",
       "source": "jev"
     },
@@ -19,7 +19,7 @@
       "true": "The line contains a recognizable stock phrase or cliche.",
       "false": "Every phrase in the line is specific to this scene, with no cliche.",
       "paraphrase": "Read only line {sid}. Is there a ready-made phrase a reader has already met in a hundred other stories, rather than wording invented for this moment? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.85,
       "fix": "Replace the prefab phrase with a detail specific to this scene.",
       "source": "jev"
     },
@@ -30,7 +30,7 @@
       "true": "The line contains seemed, appeared to, as if, noticed, somehow, or a similar hedge or filter on what happened.",
       "false": "The line states what happens directly, with no hedge or perception filter.",
       "paraphrase": "Read only line {sid}. Does the narration look at the event through a perception verb or a hedge, instead of saying what happened? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.9,
       "fix": "State what happens directly, and drop seemed, noticed, as if, and similar filters.",
       "source": "jev"
     },
@@ -41,7 +41,7 @@
       "true": "A three-item parallel list used for rhythm appears, for example 'why he had left, where he had slept, whether he would stay'.",
       "false": "No three-item rhythmic list; lists are two items or a plain inventory the action needs.",
       "paraphrase": "Read only line {sid}. Does it stack exactly three parallel items for a rhetorical beat, rather than listing what the action actually needs? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.75,
       "fix": "Break the decorative triple into the one or two items the action needs.",
       "source": "jev"
     },
@@ -52,7 +52,7 @@
       "true": "The line tells the reader what it all meant, or is a neat resolving or symbolic closer.",
       "false": "The line is plain action, dialogue, or image, with no summing up of meaning.",
       "paraphrase": "Read only line {sid}. Does it wrap the moment up by stating the lesson, the meaning, or a neat symbolic button? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.9,
       "fix": "End on the action or image, and cut the moral or summing-up.",
       "source": "jev"
     },
@@ -63,7 +63,7 @@
       "true": "The line names an emotion or states what a character wants or feels, for example 'She was afraid' or 'She wanted to ask why he had gone'.",
       "false": "No emotion or wish is named; feeling is left to action and dialogue.",
       "paraphrase": "Read only line {sid}. Does it tell the reader the feeling or the wish in so many words, instead of leaving it in the action? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.9,
       "fix": "Cut the sentence that names the feeling, and keep the action that shows it.",
       "source": "jev"
     },
@@ -74,7 +74,7 @@
       "true": "The line lists two or more smells, sounds, textures, or sights for atmosphere, for example 'smelled of diesel and wet rope'.",
       "false": "The line has at most one sensory detail, or the detail is one the action requires.",
       "paraphrase": "Read only line {sid}. Does it pile up smells, sounds, or textures to set a mood, rather than one detail the action needs? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.9,
       "fix": "Keep the one sensory detail the story needs, and cut the catalog.",
       "source": "jev"
     },
@@ -85,7 +85,7 @@
       "true": "The line denies one thing to assert another for effect.",
       "false": "No denial-then-assertion contrast.",
       "paraphrase": "Read only line {sid}. Does it reject one description in order to land on a second, for rhetorical effect? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.6,
       "fix": "State the thing directly, and delete the denied alternative.",
       "source": "jev"
     },
@@ -96,7 +96,7 @@
       "true": "The line relies on a vague word such as something, a certain, or in a way, instead of a concrete detail.",
       "false": "The details in the line are concrete and specific.",
       "paraphrase": "Read only line {sid}. Does a placeholder (something, a certain quality, an unnamed abstraction) stand where a concrete noun belongs? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.9,
       "fix": "Replace the vague placeholder with a concrete noun.",
       "source": "jev"
     },
@@ -107,7 +107,7 @@
       "true": "The line is an aphorism or an abstract reflection on time, the past, silence, memory, or loss.",
       "false": "The line is concrete and does not reach for a theme.",
       "paraphrase": "Read only line {sid}. Does it offer a quotable reflection on time, memory, silence, or the past, instead of a concrete event? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.9,
       "fix": "Replace the aphorism with the concrete event it was standing in for.",
       "source": "jev"
     },
@@ -118,7 +118,7 @@
       "true": "The line mirrors the structure of its neighbor for effect, for example 'She did not cry. She did not speak.'",
       "false": "The line does not repeat a neighbor's structure for effect.",
       "paraphrase": "Read only line {sid} against the lines beside it. Does it echo a neighbor's opening or shape for rhetorical effect? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.8,
       "fix": "Break the repeated structure so the lines no longer echo each other.",
       "source": "jev"
     },
@@ -129,7 +129,7 @@
       "true": "The line is mainly a small filler gesture that does not move the story.",
       "false": "The line's action matters to the story, or there is no filler gesture.",
       "paraphrase": "Read only line {sid}. Is it stage business (a nod, a look away, a thumb, a breath) with no effect on what happens next? Ignore words inside quotation marks.",
-      "threshold": 0.5,
+      "threshold": 0.7,
       "fix": "Cut the filler gesture, or replace it with an action that changes the scene.",
       "source": "jev"
     }
@@ -255,14 +255,14 @@
       "instructions": "Does the passage END on a summing-up, moral, or neat symbolic resolving gesture? Judge only the last one to three sentences. Ignore words inside quotation marks.",
       "true": "The passage ends on a summary, a moral, or a neat symbolic gesture that resolves the moment.",
       "false": "The passage ends on action, dialogue, or a concrete image that does not sum the moment up.",
-      "threshold": 0.5
+      "threshold": 0.85
     },
     {
       "id": "instead_contrast_page",
       "instructions": "Does a line use 'Instead, she...' / 'Instead of X, Y' contrast framing? Ignore words inside quotation marks.",
       "true": "A narration line opens with or contains an Instead-contrast.",
       "false": "No narration line uses Instead as a contrast frame.",
-      "threshold": 0.5
+      "threshold": 0.9
     }
   ]
 }

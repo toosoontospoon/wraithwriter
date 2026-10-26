@@ -481,7 +481,8 @@ def uniform_rhythm(sents: list[dict], tax: dict) -> list[dict]:
         while j < n and narr[j] and sents[j]["scene"] == sents[i]["scene"]:
             run = wc[i:j + 1]
             mean = statistics.mean(run)
-            if mean <= 0 or any(abs(x - mean) > 0.35 * mean for x in run):
+            # Similar means the whole run spans at most max(2, 20% of the mean) words.
+            if mean <= 0 or max(run) - min(run) > max(2.0, 0.2 * mean):
                 break
             j += 1
         if j - i >= 4:

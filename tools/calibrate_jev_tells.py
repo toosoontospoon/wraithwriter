@@ -12,10 +12,13 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from collections import defaultdict
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
+if str(ROOT) not in sys.path:
+    sys.path.insert(0, str(ROOT))  # run as a plain script from a checkout
 FIXTURES = ROOT / "tests" / "fixtures" / "jev_tells"
 TAX_PATH = ROOT / "bookforge" / "jev_templates" / "tell_taxonomy.json"
 # Page nouls scored on their own, against the category they gate.
@@ -46,7 +49,8 @@ def _observations(raw: dict) -> list[tuple[list, list, dict]]:
         for qid, target in PAGE_TARGETS.items():
             if qid not in scores:
                 continue
-            required = [qid] if target in labels else []
+            alias = qid[: -len("_page")] if qid.endswith("_page") else qid
+            required = [qid] if (target in labels or alias in labels) else []
             rows.append((required, [], {qid: float(scores[qid])}))
     return rows
 
@@ -119,6 +123,9 @@ def write_thresholds(picks: dict, path: Path | None = None) -> list[str]:
     updated = []
     for group in ("categories", "page_questions"):
         for row in tax.get(group) or []:
+            # Page questions share ids with categories; only the gating page questions are calibrated.
+            if group == "page_questions" and row["id"] not in PAGE_TARGETS:
+                continue
             if row["id"] in picks and row["id"] not in code_ids:
                 row["threshold"] = float(picks[row["id"]])
                 updated.append(row["id"])
@@ -152,7 +159,9 @@ def collect_raw(paths: list[Path], log_dir=None) -> dict:
             for qid, p in (tagged.get("page_scores") or {}).items():
                 page_scores[qid] = max(page_scores.get(qid, 0.0), p)
         for hit in jev_tells.code_hits(sents, cfg, tax):
-            for sid in hit["ids"]:
+            # A repeated action is the later line; the earlier id is only the reference.
+            ids = hit["ids"][-1:] if hit["category"] == "repeated_action" else hit["ids"]
+            for sid in ids:
                 probs[(hit["category"], sid)] = 1.0
         items = []
         for row in rows:
@@ -180,6 +189,7 @@ def main(argv: list[str] | None = None) -> int:
     ap.add_argument("--planted", type=Path, default=FIXTURES, help="Directory of planted_*.json pages")
     ap.add_argument("--write", action="store_true", help="Update thresholds in tell_taxonomy.json")
     ap.add_argument("--tax", type=Path, default=TAX_PATH)
+    ap.add_argument("--log-dir", type=Path, default=None, help="Jev call log directory (spend is printed)")
     args = ap.parse_args(argv)
     if args.raw:
         raw = json.loads(args.raw.read_text())
@@ -187,7 +197,10 @@ def main(argv: list[str] | None = None) -> int:
         paths = planted_paths(args.planted)
         if not paths:
             raise SystemExit(f"no planted_*.json in {args.planted}")
-        raw = collect_raw(paths)
+        raw = collect_raw(paths, log_dir=args.log_dir)
+        if args.log_dir:
+            from bookforge.core import jev
+            print(f"jev spend ${jev.spent(args.log_dir):.4f}")
         args.out.parent.mkdir(parents=True, exist_ok=True)
         args.out.write_text(json.dumps(raw, indent=2) + "\n")
         print(f"wrote {args.out}")

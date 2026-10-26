@@ -129,7 +129,7 @@ The twelve Jev categories are AI vocabulary, stock phrases, filter hedges, decor
 
 After the first call, any sentence whose probability sits in `band` (default 0.4 to 0.6) is asked once more, in one extra batched call, using the paraphrase wording. `reask: 2` also asks the original wording again. The stored probability is the mean. Scores outside the band are not asked again.
 
-Two checks never call Jev. `uniform_rhythm` flags four or more narration sentences of similar length, or three in a row that open on the same word. `repeated_action` flags a later narration sentence that repeats an earlier verb-and-object pair or a two-to-three-word content phrase inside `repeat_window` (default 6). Repeated names, a single common noun, and dialogue are not flagged. Punctuation tics stay with the scrubber.
+Two checks never call Jev. `uniform_rhythm` flags four or more narration sentences whose lengths sit within max(2 words, 20% of their mean), or three in a row that open on the same word. `repeated_action` flags a later narration sentence that repeats an earlier verb-and-object pair or a two-to-three-word content phrase inside `repeat_window` (default 6). Repeated names, a single common noun, and dialogue are not flagged. Punctuation tics stay with the scrubber.
 
 Without `TYPESAFE_API_KEY` the two code checks still run and the packet says Jev was skipped. The tagger is about $0.002 per 200 words. Spend is capped by `deai.jev_tells.cap_usd` (default $1) and logged with the other Jev calls. Results are cached under the project state directory so the screen and the editor do not pay twice.
 
