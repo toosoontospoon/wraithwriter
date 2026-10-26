@@ -145,3 +145,43 @@ def test_deai_chapter_records_a_disabled_report_and_skips_the_writer(project):
     gate = json.loads(sorted(project.steps_dir.glob("*deai_ch01/final_gate.json"))[-1].read_text())
     assert str(gate["jev_revise"]["jev"]).startswith("skipped:")
     assert project.chapter_path("ch01", "final").read_text().strip() == AFRAID
+
+
+def test_word_cut_cap_is_cumulative_across_categories():
+    _enable()
+    # One page of 20 five-word sentences (100 words). The 10% cap allows 10 words cut in total.
+    text = " ".join(f"Line {n} sat there quietly." for n in range(20))
+    from bookforge.core import jev_tells
+    sents = jev_tells.annotate(text)
+    tagged = {"sentences": sents,
+              "hits": [{"category": "filler_gesture", "ids": ["s01", "s02"], "severity": 1},
+                       {"category": "vague_detail", "ids": ["s03"], "severity": 1}]}
+
+    def jfake(state, qs, model):
+        return {"model": model, "answers": {k: {"type": "noul", "noul": 0.0} for k in qs},
+                "usage": {"input_tokens": 4}}
+
+    def lfake(role, system, prompt, json_mode):
+        ids = [ln.split(":")[0] for ln in prompt.split("FLAGGED LINES")[1].splitlines() if ln[:1] == "s"]
+        return {"replacements": [{"id": i, "text": ""} for i in ids]}
+
+    jev.set_fake(jfake)
+    llm.set_fake(lfake)
+    cfg = jev_revise.revise_settings(None)
+    budget, report = {}, {"rejected": []}
+    first, kept = jev_revise._apply_category(text, tagged, "filler_gesture", cfg, None, 1.0, report, budget)
+    assert len(kept) == 2 and first.startswith("Line 2 sat")
+    budget["used"] = budget.pop("pending_used")
+    second, kept2 = jev_revise._apply_category(text, tagged, "vague_detail", cfg, None, 1.0, report, budget)
+    assert kept2 == [] and second == text
+    assert any(r["reason"] == "word-cut cap" for r in report["rejected"])
+
+
+def test_cut_line_takes_its_leading_space():
+    text = "One. Two. Three."
+    assert jev_revise._splice(text, {"s02": ""}) == "One. Three."
+
+
+def test_cut_first_line_of_paragraph():
+    text = "One. Two.\n\nThree. Four."
+    assert jev_revise._splice(text, {"s01": "", "s03": ""}) == "Two.\n\nFour."

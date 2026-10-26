@@ -112,9 +112,20 @@ def _cuts(sents: list[dict], cuts: list[str], log_dir, cap: float) -> dict:
 def _splice(text: str, reps: dict[str, str]) -> str:
     spans = jev_tells.split_sentences(text)
     out, last = [], 0
+    strip_next = False
     for i, (a, b) in enumerate(spans):
-        out.append(text[last:a])
         k = jev_tells.sid(i)
+        gap = text[last:a]
+        cut = k in reps and not reps[k]
+        at_start = strip_next or last == 0 or "\n" in gap
+        if strip_next and "\n" not in gap:
+            gap = ""  # every line before this one in the paragraph was cut
+        strip_next = False
+        if cut:
+            if not at_start:
+                gap = ""  # a cut line takes its leading space with it
+            strip_next = at_start
+        out.append(gap)
         out.append(reps[k] if k in reps else text[a:b])
         last = b
     out.append(text[last:])
@@ -157,7 +168,7 @@ def _writer(text: str, tagged: dict, cat: str, cfg: dict) -> dict:
 
 
 def _apply_category(text: str, tagged: dict, cat: str, cfg: dict, log_dir, cap: float,
-                    report: dict) -> tuple[str, list]:
+                    report: dict, budget: dict | None = None) -> tuple[str, list]:
     """Return spliced text and the edits that passed the line guards. The caller may still undo them."""
     originals = {s["id"]: s["text"] for s in tagged["sentences"]}
     try:
@@ -176,7 +187,14 @@ def _apply_category(text: str, tagged: dict, cat: str, cfg: dict, log_dir, cap: 
     bar = float(cfg["fidelity_threshold"])
     loss_max = 1.0 - bar
     page_of, page_words = _page_budget(text, int(jev_tells.settings(None)["page_words"]))
-    used = [0 for _ in page_words]
+    # The word-cut cap is cumulative over the whole run, not per category, so it is kept in
+    # ``budget`` (page sizes of the original text, and words already cut per page).
+    budget = budget if budget is not None else {}
+    base_words = budget.setdefault("page_words", list(page_words))
+    used = budget.setdefault("used", [0 for _ in base_words])
+    while len(used) < len(page_words):
+        used.append(0)
+    trial = list(used)
     accepted, pending = {}, []
     for k, v in changed.items():
         old = originals[k]
@@ -200,16 +218,18 @@ def _apply_category(text: str, tagged: dict, cat: str, cfg: dict, log_dir, cap: 
                 continue
         pi = page_of.get(k, 0)
         delta = max(0, len(old.split()) - len(v.split()))
-        cap_words = page_words[pi] * float(cfg["max_cut_ratio"]) if pi < len(page_words) else 0
-        if delta and (pi >= len(used) or used[pi] + delta > cap_words + 1e-9):
+        size = base_words[pi] if pi < len(base_words) else (page_words[pi] if pi < len(page_words) else 0)
+        cap_words = size * float(cfg["max_cut_ratio"])
+        if delta and (pi >= len(trial) or trial[pi] + delta > cap_words + 1e-9):
             report["rejected"].append({"id": k, "category": cat, "reason": "word-cut cap"})
             continue
-        if pi < len(used):
-            used[pi] += delta
+        if pi < len(trial):
+            trial[pi] += delta
         accepted[k] = v
         pending.append({"id": k, "category": cat, "before": old, "after": v or "(cut)", "words": delta})
     if not accepted:
         return text, []
+    budget["pending_used"] = trial
     return _splice(text, accepted), pending
 
 
@@ -223,6 +243,7 @@ def revise(text: str, cfg: dict | None = None, log_dir=None, names: list[str] | 
     tell_cfg = {"names": list(names or [])}
     cap = float(jev_tells.settings(None).get("cap_usd") or 1.0)
     report = _blank("ok", enabled=True)
+    budget: dict = {}
     current = original
     try:
         for rnd in range(cfg["max_rounds"]):
@@ -240,7 +261,7 @@ def revise(text: str, cfg: dict | None = None, log_dir=None, names: list[str] | 
             for cat in cats:
                 before_count = tagged["counts"].get(cat, 0)
                 before_sev = _severity(tagged)
-                nxt, pending = _apply_category(current, tagged, cat, cfg, log_dir, cap, report)
+                nxt, pending = _apply_category(current, tagged, cat, cfg, log_dir, cap, report, budget)
                 if nxt == current:
                     continue
                 again = jev_tells.tag_text(nxt, cfg=tell_cfg, log_dir=log_dir)
@@ -255,8 +276,10 @@ def revise(text: str, cfg: dict | None = None, log_dir=None, names: list[str] | 
                     current = nxt
                     tagged = again
                     report["kept"].extend(pending)
+                    budget["used"] = budget.pop("pending_used", budget.get("used"))
                     moved = True
                 else:
+                    budget.pop("pending_used", None)
                     report["reverted"].append({
                         "category": cat, "reason": "category count or total severity did not fall"})
                     report["rejected"].append({"category": cat, "reason": "undone: burden did not fall"})
