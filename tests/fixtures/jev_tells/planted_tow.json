@@ -1,0 +1,90 @@
+{
+ "note": "Mostly clean calibration page (fiction) for false-positive rate. Each item: [text, required tells, acceptable extra tells].",
+ "page_labels": [],
+ "sentences": [
+  [
+   "The tow truck reached the quarry road at a quarter past nine.",
+   [],
+   []
+  ],
+  [
+   "Juno parked behind the stalled van and set two flares on the gravel.",
+   [],
+   []
+  ],
+  [
+   "The driver of the van was a boy of about seventeen in a delivery shirt two sizes too big.",
+   [],
+   []
+  ],
+  [
+   "\"It just died,\" he said. \"Lights and everything.\"",
+   [],
+   []
+  ],
+  [
+   "She popped the hood and held her torch on the battery terminals.",
+   [],
+   []
+  ],
+  [
+   "The negative clamp was furred with white corrosion.",
+   [],
+   []
+  ],
+  [
+   "She scraped it with the back of a knife, wiggled the clamp and told him to try it.",
+   [],
+   []
+  ],
+  [
+   "The engine coughed twice and caught.",
+   [],
+   []
+  ],
+  [
+   "The boy laughed, a high startled laugh, and then looked embarrassed by it.",
+   [],
+   [
+    "emotion_explained"
+   ]
+  ],
+  [
+   "Juno wrote the call number on her clipboard and the time beside it.",
+   [],
+   []
+  ],
+  [
+   "The quarry was quiet apart from the van's idle and a dog barking somewhere down the hill.",
+   [],
+   [
+    "generic_detail",
+    "sensory_listing"
+   ]
+  ],
+  [
+   "\"What do I owe you?\" he asked.",
+   [],
+   []
+  ],
+  [
+   "\"Nothing. Get a new clamp before Friday.\"",
+   [],
+   []
+  ],
+  [
+   "Her heart swelled with a quiet, unspoken pride as he pulled away.",
+   [
+    "stock_phrase",
+    "ai_vocab",
+    "emotion_explained"
+   ],
+   []
+  ],
+  [
+   "She picked up the flares, knocked them out against the road and drove back toward town.",
+   [],
+   []
+  ]
+ ]
+}

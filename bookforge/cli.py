@@ -314,6 +314,70 @@ def screen_facts(project, chapter):
     click.echo(f"wrote {facts.path(ctx, chapter)}")
 
 
+@cli.group("tells")
+def tells_group():
+    """Jev tell tagger, and the opt-in per-category reviser."""
+
+
+def _chapter_text(ctx, chapter: str) -> str:
+    for kind in ("draft", "revised", "final"):
+        path = ctx.chapter_path(chapter, kind)
+        if path.exists():
+            return path.read_text()
+    raise click.ClickException(f"no draft, revised, or final text for {chapter}")
+
+
+@tells_group.command("tag")
+@click.option("--file", "file_", type=click.Path(exists=True), default=None)
+@click.option("--project", type=click.Path(exists=True), default=None)
+@click.option("--chapter", default=None)
+@click.option("--json", "as_json", is_flag=True, help="Print the tagger result as JSON")
+def tells_tag(file_, project, chapter, as_json):
+    """Tag AI tells. Prints hits and Jev spend. Code checks still run without a Jev key."""
+    import tempfile
+
+    from bookforge.core import jev, jev_tells
+    if file_:
+        text = Path(file_).read_text()
+        log_dir = Path(tempfile.mkdtemp(prefix="jev-tells-"))
+    elif project and chapter:
+        ctx = _ctx(project)
+        if not ctx.chapter(chapter):
+            raise click.ClickException(f"no outline entry for {chapter}")
+        text = _chapter_text(ctx, chapter)
+        log_dir = jev_tells.project_log_dir(ctx)
+    else:
+        raise click.UsageError("pass --file, or --project and --chapter")
+    out = jev_tells.tag_text(text, log_dir=log_dir)
+    spend = jev.spent(log_dir)
+    if as_json:
+        click.echo(json.dumps({"jev": out["jev"], "spend_usd": round(spend, 6), "counts": out["counts"],
+                               "hits": out["hits"], "reasked": out["reasked"], "page_scores": out["page_scores"]},
+                              indent=2, ensure_ascii=False))
+        return
+    click.echo(f"Jev: {out['jev']}  spend ${spend:.4f}  hits {len(out['hits'])}")
+    for hit in out["hits"]:
+        p = "" if hit.get("p") is None else f" p={hit['p']}"
+        click.echo(f"  [{hit['source']}:{hit['category']} sev {hit['severity']}{p}] {(hit.get('span') or '')[:110]}")
+
+
+@tells_group.command("revise")
+@click.option("--file", "file_", required=True, type=click.Path(exists=True))
+@click.option("--out", "out_", required=True, type=click.Path())
+def tells_revise(file_, out_):
+    """Run the per-category reviser on a file. Explicit opt-in, even when config has it off."""
+    import tempfile
+
+    from bookforge.core import jev_revise
+    text = Path(file_).read_text()
+    new, rep = jev_revise.revise(text, log_dir=Path(tempfile.mkdtemp(prefix="jev-revise-")), force=True)
+    Path(out_).write_text(new)
+    click.echo(f"wrote {out_}  jev {rep.get('jev')}  rounds {rep.get('rounds')}  "
+               f"kept {len(rep.get('kept') or [])}  words_cut {rep.get('words_cut')}")
+    for row in rep.get("rejected") or []:
+        click.echo(f"  rejected {row.get('id') or row.get('category') or ''} {row.get('reason')}")
+
+
 from bookforge.craft.cli_cmds import craft_group  # noqa: E402
 
 cli.add_command(craft_group)

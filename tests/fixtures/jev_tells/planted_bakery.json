@@ -1,0 +1,143 @@
+{
+ "note": "Planted calibration page (fiction). Each item: [text, required tells, acceptable extra tells].",
+ "page_labels": [
+  "tidy_ending",
+  "repeated_action",
+  "uniform_rhythm"
+ ],
+ "sentences": [
+  [
+   "Rafe got to the bakery at four, an hour before the ovens needed him.",
+   [],
+   []
+  ],
+  [
+   "He tied his apron.",
+   [
+    "uniform_rhythm"
+   ],
+   [
+    "mirrored_lines"
+   ]
+  ],
+  [
+   "He lit the burners.",
+   [
+    "uniform_rhythm"
+   ],
+   [
+    "mirrored_lines"
+   ]
+  ],
+  [
+   "He checked the proof box.",
+   [
+    "uniform_rhythm"
+   ],
+   [
+    "mirrored_lines"
+   ]
+  ],
+  [
+   "He started the coffee.",
+   [
+    "uniform_rhythm"
+   ],
+   [
+    "mirrored_lines"
+   ]
+  ],
+  [
+   "The dough from last night had risen against the cling film in soft gray domes.",
+   [],
+   []
+  ],
+  [
+   "The kitchen was a kaleidoscope of flour dust and copper light, a testament to forty years of early mornings.",
+   [
+    "ai_vocab"
+   ],
+   [
+    "portentous_abstraction",
+    "sensory_listing"
+   ]
+  ],
+  [
+   "He punched down the first tub and turned it out onto the bench.",
+   [],
+   []
+  ],
+  [
+   "Mina came in at half past, shaking rain off her hood.",
+   [],
+   []
+  ],
+  [
+   "\"You're early,\" she said.",
+   [],
+   []
+  ],
+  [
+   "\"I'm always early.\"",
+   [],
+   []
+  ],
+  [
+   "She wanted to tell him about the letter from the landlord, about the rent, about the date in the second paragraph.",
+   [
+    "rule_of_three",
+    "emotion_explained"
+   ],
+   [
+    "mirrored_lines"
+   ]
+  ],
+  [
+   "He punched down the second tub and turned it out onto the bench.",
+   [
+    "repeated_action"
+   ],
+   [
+    "mirrored_lines"
+   ]
+  ],
+  [
+   "A wave of tiredness washed over him.",
+   [
+    "stock_phrase"
+   ],
+   [
+    "emotion_explained"
+   ]
+  ],
+  [
+   "Mina picked up a scraper and started dividing the dough into twelve pieces.",
+   [],
+   []
+  ],
+  [
+   "She did not mention the letter. She did not mention the rent.",
+   [
+    "mirrored_lines"
+   ],
+   [
+    "uniform_rhythm"
+   ]
+  ],
+  [
+   "The timer went off, and he pulled out the first tray of rye.",
+   [],
+   []
+  ],
+  [
+   "In the end, it was never really about the bread, it was about who stayed to bake it.",
+   [
+    "tidy_ending"
+   ],
+   [
+    "not_x_but_y",
+    "portentous_abstraction"
+   ]
+  ]
+ ]
+}

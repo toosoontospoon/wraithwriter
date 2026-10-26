@@ -1,0 +1,149 @@
+{
+ "note": "Planted calibration page (fiction). Each item: [text, required tells, acceptable extra tells].",
+ "page_labels": [
+  "tidy_ending",
+  "instead_contrast",
+  "repeated_action"
+ ],
+ "sentences": [
+  [
+   "The ferry to Skarholm ran twice a week, and Edda took the Thursday boat with her toolbox wedged between her boots.",
+   [],
+   []
+  ],
+  [
+   "The keeper's cottage stood at the end of a cinder path, its door painted the green of old bottles.",
+   [],
+   []
+  ],
+  [
+   "Inside, the air was thick with an intricate symphony of salt, lamp oil and damp wool.",
+   [
+    "ai_vocab",
+    "sensory_listing"
+   ],
+   [
+    "rule_of_three",
+    "stock_phrase"
+   ]
+  ],
+  [
+   "Edda set the toolbox on the table and wiped her palms on her trousers.",
+   [],
+   []
+  ],
+  [
+   "Old Brann sat by the stove with his bad leg up on a crate.",
+   [],
+   []
+  ],
+  [
+   "He seemed to have been expecting her for hours, as if the radio had told him she was coming.",
+   [
+    "filter_hedge"
+   ],
+   []
+  ],
+  [
+   "\"The lens won't turn,\" he said. \"Third night now.\"",
+   [],
+   []
+  ],
+  [
+   "She couldn't help but smile at the way he said it, like a man reporting a sick cow.",
+   [
+    "stock_phrase"
+   ],
+   []
+  ],
+  [
+   "Edda wiped her palms on her trousers again and climbed the iron stairs.",
+   [
+    "repeated_action"
+   ],
+   [
+    "gesture_beat"
+   ]
+  ],
+  [
+   "The gear housing was packed with grease gone hard as candle wax.",
+   [],
+   []
+  ],
+  [
+   "It wasn't rust that had stopped the lamp. It was neglect.",
+   [
+    "not_x_but_y"
+   ],
+   [
+    "mirrored_lines",
+    "portentous_abstraction"
+   ]
+  ],
+  [
+   "She chipped the grease out with a flat screwdriver and laid the pieces on a rag.",
+   [],
+   []
+  ],
+  [
+   "Something about the tower felt different in a way she couldn't quite place.",
+   [
+    "generic_detail"
+   ],
+   [
+    "filter_hedge",
+    "stock_phrase"
+   ]
+  ],
+  [
+   "She was proud of the work, and a little afraid that Brann would not need her after this.",
+   [
+    "emotion_explained"
+   ],
+   []
+  ],
+  [
+   "The drive chain had slipped one tooth on the sprocket.",
+   [],
+   []
+  ],
+  [
+   "She fitted it back, turned the crank twice and felt the whole lens begin to move.",
+   [],
+   []
+  ],
+  [
+   "Down below, Brann nodded slowly and looked away toward the window.",
+   [
+    "gesture_beat"
+   ],
+   []
+  ],
+  [
+   "Instead of thanking her, he asked whether she had eaten.",
+   [
+    "not_x_but_y"
+   ],
+   []
+  ],
+  [
+   "Light, after all, is only the dark remembering what it lost.",
+   [
+    "portentous_abstraction"
+   ],
+   [
+    "tidy_ending"
+   ]
+  ],
+  [
+   "That night, as the beam swept the water, Edda understood that some things are worth keeping alive.",
+   [
+    "tidy_ending"
+   ],
+   [
+    "portentous_abstraction",
+    "emotion_explained"
+   ]
+  ]
+ ]
+}

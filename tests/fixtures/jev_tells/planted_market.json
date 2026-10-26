@@ -1,0 +1,130 @@
+{
+ "note": "Original prototype calibration page (fiction). Each item: [text, required tells, acceptable extra tells].",
+ "page_labels": [
+  "tidy_ending"
+ ],
+ "sentences": [
+  [
+   "The bus let Ines off at the bottom of Calle Ferro at ten past six.",
+   [],
+   []
+  ],
+  [
+   "The market was a tapestry of color and noise, a testament to the town's stubborn life.",
+   [
+    "ai_vocab"
+   ],
+   [
+    "sensory_listing"
+   ]
+  ],
+  [
+   "She bought two oranges from the woman with the burn scar and paid in coins.",
+   [],
+   []
+  ],
+  [
+   "A wave of relief washed over her when she saw the shutters of her father's shop were up.",
+   [
+    "stock_phrase"
+   ],
+   []
+  ],
+  [
+   "Her brother seemed to be waiting for her, as if he had known she would come.",
+   [
+    "filter_hedge"
+   ],
+   []
+  ],
+  [
+   "Paco had shaved his beard off since the funeral.",
+   [],
+   []
+  ],
+  [
+   "She wanted to ask where the money had gone, who had signed the papers, and why nobody had called her.",
+   [
+    "rule_of_three"
+   ],
+   []
+  ],
+  [
+   "\"You're late,\" he said, and went back to stacking crates of tinned sardines.",
+   [],
+   []
+  ],
+  [
+   "Her hands shook as she set the oranges down. She was afraid of what he would say.",
+   [
+    "emotion_explained"
+   ],
+   [
+    "filter_hedge"
+   ]
+  ],
+  [
+   "The shop smelled of brine, sawdust and old paper, and she could hear the radio and the gulls and the traffic.",
+   [
+    "sensory_listing"
+   ],
+   []
+  ],
+  [
+   "It wasn't anger in his voice. It was grief.",
+   [
+    "not_x_but_y",
+    "mirrored_lines"
+   ],
+   [
+    "mirrored_lines"
+   ]
+  ],
+  [
+   "Something in the room had changed in a way she could not name.",
+   [
+    "generic_detail"
+   ],
+   []
+  ],
+  [
+   "The past, she thought, has a way of waiting for you in the places you leave.",
+   [
+    "portentous_abstraction"
+   ],
+   []
+  ],
+  [
+   "He nodded slowly and looked away.",
+   [
+    "gesture_beat"
+   ],
+   []
+  ],
+  [
+   "The till drawer stuck at the second notch, the way it always had.",
+   [],
+   []
+  ],
+  [
+   "She pulled it open with both hands and counted forty-one euros in small notes.",
+   [],
+   []
+  ],
+  [
+   "\"That's the week,\" Paco said. \"Tuesday was eleven.\"",
+   [],
+   []
+  ],
+  [
+   "For the first time in years, standing among the crates, she felt she had finally come home.",
+   [
+    "tidy_ending"
+   ],
+   [
+    "emotion_explained",
+    "filter_hedge"
+   ]
+  ]
+ ]
+}

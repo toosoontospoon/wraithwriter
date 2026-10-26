@@ -121,6 +121,30 @@ Flags:
 | `screen.enabled` | true | Code checks still run without `TYPESAFE_API_KEY`. Jev is skipped cleanly |
 | `screen.deai_questions` | true | The six de-AI questions on the existing per-section Jev call |
 
+## Jev tell tagger
+
+`deai.jev_tells` (on by default) asks Jev one yes/no per narration sentence per category, in one batched call per page of about 350 words, then a second call for page-level questions. Jev returns probabilities only. Code turns those into the same located-hit rows the editor and the revision screen already read. A sentence that is entirely quoted dialogue is numbered for context and is not asked. Mixed lines are judged on the narration, ignoring words inside quotation marks.
+
+The twelve Jev categories are AI vocabulary, stock phrases, filter hedges, decorative triples, tidy endings, explained emotion, sensory catalogs, not-X-but-Y contrast, vague detail, portentous abstraction, mirrored lines, and filler gestures. Definitions, true/false criteria, a paraphrase used for the re-ask, and the threshold live in `bookforge/jev_templates/tell_taxonomy.json`. A hit is severity 3 at p >= 0.9, severity 2 at p >= 0.75, and severity 1 at the category threshold (starting at 0.5 until you calibrate). Tidy-ending sentence hits are kept only in the last three narration sentences of a page or a scene. A high `tidy_ending_page` score with no sentence hit there flags the last narration sentence. A high `instead_contrast_page` score flags narration lines that contain "Instead".
+
+After the first call, any sentence whose probability sits in `band` (default 0.4 to 0.6) is asked once more, in one extra batched call, using the paraphrase wording. `reask: 2` also asks the original wording again. The stored probability is the mean. Scores outside the band are not asked again.
+
+Two checks never call Jev. `uniform_rhythm` flags four or more narration sentences of similar length, or three in a row that open on the same word. `repeated_action` flags a later narration sentence that repeats an earlier verb-and-object pair or a two-to-three-word content phrase inside `repeat_window` (default 6). Repeated names, a single common noun, and dialogue are not flagged. Punctuation tics stay with the scrubber.
+
+Without `TYPESAFE_API_KEY` the two code checks still run and the packet says Jev was skipped. The tagger is about $0.002 per 200 words. Spend is capped by `deai.jev_tells.cap_usd` (default $1) and logged with the other Jev calls. Results are cached under the project state directory so the screen and the editor do not pay twice.
+
+```text
+bookforge tells tag --file chapter.txt
+bookforge tells tag --project projects/myproject --chapter ch01 --json
+python tools/calibrate_jev_tells.py                 # live Jev, writes jev_tells_raw.json
+python tools/calibrate_jev_tells.py --raw jev_tells_raw.json
+python tools/calibrate_jev_tells.py --raw jev_tells_raw.json --write
+```
+
+Calibration runs the four planted pages in `tests/fixtures/jev_tells/` and, for each category, picks the threshold from 0.5 to 0.9 (step 0.05) with the best F1. A tie takes the higher threshold. An acceptable extra tell is neither a true positive nor a false positive. `--write` updates `tell_taxonomy.json`.
+
+`deai.jev_revise` is off by default, so the chapter path adds no writer call. `bookforge tells revise --file chapter.txt --out chapter-revised.txt` is an explicit opt-in and runs even when the config switch is off. The writer fixes one category at a time, worst severity first, and returns replacement sentences. Code splices them, so untouched sentences stay byte-identical and quoted dialogue in a line has to survive. These guards always run and cannot be switched off: a Jev fidelity check (the line adds no new fact, action, object, or event, and a thought is not turned into speech), a Jev cut check (removing a line must not drop a fact another line depends on), a cap of 10% of the page's words cut, a re-tag that keeps the pass only when that category's count did not rise and the total severity fell, and the detector edit guard (`deai.max_tell_drop`). If Jev is unavailable the reviser changes nothing.
+
 ## License
 
 MIT. See `LICENSE`.
