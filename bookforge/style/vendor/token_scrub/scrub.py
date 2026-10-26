@@ -180,12 +180,29 @@ def _is_dashish(ch: str) -> bool:
 
 
 def _later_single_closer(text: str, index: int) -> bool:
-    """True when a later `.?!` is glued to a single quote (`boat.'`)."""
+    """True when this quotation still has a `.?!` glued to its closer (`boat.'`).
+
+    A later sentence's `'yes.'` is not this quotation. Stop at a single quote
+    that opens another quotation (not a contraction, and not a letter-preceded
+    possessive still inside this one).
+    """
     j = index + 1
     n = len(text)
-    while j < n - 1:
-        if text[j] in ".?!" and text[j + 1] in _AMBIG_SINGLE:
+    while j < n:
+        ch = text[j]
+        if ch in ".?!" and j + 1 < n and text[j + 1] in _AMBIG_SINGLE:
             return True
+        if ch in _AMBIG_SINGLE or ch == "\u2018":
+            prev = text[j - 1] if j else ""
+            nxt = text[j + 1] if j + 1 < n else ""
+            # Contraction or another possessive inside this quotation.
+            if prev.isalpha() and nxt.isalpha():
+                j += 1
+                continue
+            if prev.isalpha():
+                j += 1
+                continue
+            return False
         j += 1
     return False
 
@@ -197,8 +214,9 @@ def _quote_roles(text: str) -> list[str]:
     of that kind, a letter-preceded `'` or U+2019 is a possessive. Inside a
     quote, a letter-preceded mark closes only when the next non-space character
     is the end, a dash, or punctuation. When that next character is a word and
-    a later `boat.'` delimiter exists, the mark is a possessive and the stack
-    stays open. `"` pairs with `"`. U+2019 is a closer only when this scan says so.
+    this same quotation still has a `boat.'` closer ahead, the mark is a
+    possessive and the stack stays open. A `'yes.'` in a later sentence does
+    not count. `"` pairs with `"`. U+2019 is a closer only when this scan says so.
     """
     roles = [""] * len(text)
     depth = {"single": 0, "double": 0}

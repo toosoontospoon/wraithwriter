@@ -13,7 +13,7 @@
   },
   "files": {
     "bookforge/style/vendor/token_scrub/scrub.py": {
-      "sha256": "0fd09e78ae1293e461c588d80f4869f37c8e28d538c1ece2a5d8eadb87851f94"
+      "sha256": "71baa173e12e755ad61bd09d018ca20af431a800324fd9f6f44c8d8649d11838"
     },
     "bookforge/style/vendor/de-ai-revision/rules_extract.md": {
       "sha256": "716780c45749885c0fadbd66a006e37434c394f8f6af5fa1e5f4763f6dd799a0"
