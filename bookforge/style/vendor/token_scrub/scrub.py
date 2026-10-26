@@ -264,9 +264,10 @@ def _quote_roles(text: str) -> list[str]:
     is the end, a dash, or punctuation. When that next character is a word, the
     only lookahead is whether a later quote opens a following quotation (its
     next non-space character is a word, and that span has its own closer). If
-    it does, this mark closes. If the later quote is followed by end, space, or
-    punctuation (`room—'`), this mark stays a possessive. `"` pairs with `"`.
-    U+2019 is a closer only when this scan says so.
+    it does, this mark closes. A dash-preceded quote uses that same test while
+    an earlier quote is still open (`there—'go'`, `once—'yes'`). End, space, or
+    punctuation after it still closes this quotation (`room—'`, `'yes.'—`).
+    `"` pairs with `"`. U+2019 is a closer only when this scan says so.
     """
     roles = [""] * len(text)
     depth = {"single": 0, "double": 0}
@@ -298,6 +299,13 @@ def _quote_roles(text: str) -> list[str]:
             depth[kind] += 1
             continue
         if kind == "double" or not prev.isalpha():
+            # A dash-preceded quote can open the next quotation while an
+            # earlier quote is still open ('hello there—'go'). End, space,
+            # or punctuation after it still closes this one ('room—').
+            if kind == "single" and _starts_new_quotation(text, i):
+                roles[i] = "open"
+                depth[kind] += 1
+                continue
             roles[i] = "close"
             depth[kind] -= 1
             continue
