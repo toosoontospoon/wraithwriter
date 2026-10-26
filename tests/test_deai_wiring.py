@@ -181,9 +181,14 @@ def test_deai_questions_positions_thresholds_and_switch(project, monkeypatch):
     end = cases[5][1]
     _, seen, _ = run(intro + "\n\n" + mid + "\n\n" + end, {}, words=20)
     assert len(seen) >= 3
-    assert "ai_polished_intro" in seen[0][1] and "ai_parallel_list_ending" not in seen[0][1]
-    assert "ai_polished_intro" not in seen[1][1] and "ai_parallel_list_ending" not in seen[1][1]
-    assert "ai_parallel_list_ending" in seen[-1][1] and "ai_polished_intro" not in seen[-1][1]
+    # Sections are screened in parallel, so look each one up by its opening words.
+    by = {head: qs for head, qs in seen}
+    first = next(qs for h, qs in by.items() if h.startswith("Millbrook"))
+    middle = next(qs for h, qs in by.items() if h.startswith("Finn walked"))
+    last = next(qs for h, qs in by.items() if h.startswith("Shops"))
+    assert "ai_polished_intro" in first and "ai_parallel_list_ending" not in first
+    assert "ai_polished_intro" not in middle and "ai_parallel_list_ending" not in middle
+    assert "ai_parallel_list_ending" in last and "ai_polished_intro" not in last
 
     config.set_config({"llm": {"json_retries": 1}, "screen": {"enabled": True, "deai_questions": False,
                                                               "section_words": 500}})
@@ -315,3 +320,10 @@ def test_screen_checks_expose_structural_candidates():
     rules = {h["check"] for h in hits}
     assert {"polished_intro", "parallel_list_ending", "skill_banlist", "not_x_but_y"} <= rules
     assert all("delve" not in (h.get("evidence") or "").lower() for h in hits)
+
+
+def test_closing_tricolon_needs_parallel_items():
+    assert detector.parallel_list_ending_evidence(
+        "We show up, the kids remember the day, and it costs almost nothing, so we rarely skip.")
+    assert detector.parallel_list_ending_evidence(
+        "Finn walked down to the yard, pulled the gate shut, and went in for bread before the rain.") is None

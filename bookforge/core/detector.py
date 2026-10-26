@@ -262,6 +262,10 @@ def _opening_word(s: str) -> str:
     return m.group(1).lower() if m else ""
 
 
+_TRICOLON_LEADS = {"the", "a", "an", "it", "we", "they", "he", "she", "i", "you", "my", "our", "their",
+                   "his", "her", "its", "this", "that", "these", "those", "no", "every", "each", "some"}
+
+
 def _closing_tricolon(s: str) -> bool:
     m = re.match(r"^(.+?), (.+?), and (.+?)\.$", s.strip())
     if not m:
@@ -270,7 +274,12 @@ def _closing_tricolon(s: str) -> bool:
     if any("," in part for part in parts[:2]):
         return False
     counts = [len(_WORD.findall(part)) for part in parts]
-    return all(2 <= c <= 12 for c in counts)
+    if not all(2 <= c <= 12 for c in counts):
+        return False
+    # A plain action series ("walked in, pulled the gate shut, and went home") is not a summary.
+    # Keep it only when the last two items are parallel phrases or fresh clauses.
+    a, b = (part.split()[0].lower().strip(",;:") for part in parts[1:])
+    return a == b or (a in _TRICOLON_LEADS and b in _TRICOLON_LEADS)
 
 
 def parallel_list_ending_evidence(p: str) -> str | None:
