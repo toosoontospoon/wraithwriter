@@ -27,7 +27,7 @@ _FIGURATIVE_LANDSCAPE = (
 )
 _LEVERAGE_VERB = (
     r"\b(?:leveraged|leveraging|leverages)\b",
-    r"\b(?:to|can|will|we|they)\s+leverage\b",
+    r"\b(?:to|can|could|will|would|shall|should|may|might|must|we|they|you|i)\s+(?:not\s+)?leverage\b",
 )
 
 

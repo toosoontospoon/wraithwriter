@@ -238,3 +238,21 @@ def test_deai_chapter_token_gate_respects_fail_on_tokens_false(project, monkeypa
     from bookforge.steps import deai_chapter
     deai_chapter.run(project, "ch01")
     assert "\u2014" in project.chapter_path("ch01", "final").read_text()
+
+
+def test_leverage_after_modal_verbs():
+    from bookforge.core.detector import detect
+    for modal in ("would", "could", "should", "will", "can", "might not"):
+        text = f"The captain {modal} leverage the old winch before the tide turns."
+        assert detect(text)["counts"].get("skill_banlist", 0) == 1, modal
+
+
+def test_vendored_manifest_has_no_local_paths_or_personal_examples():
+    import json
+    from pathlib import Path
+    root = Path(__file__).resolve().parents[1]
+    manifest = json.loads((root / "bookforge/style/vendor/VENDORED.json").read_text())
+    for src in manifest["sources"].values():
+        assert not src["path"].startswith("/"), src["path"]
+    extract = (root / "bookforge/style/vendor/de-ai-revision/rules_extract.md").read_text()
+    assert "girls" not in extract.lower()

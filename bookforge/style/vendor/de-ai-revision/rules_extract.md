@@ -8,9 +8,9 @@
 
 LLMs often drop a short word that *feels* loaded (streak, pull, badge, feed, glow, signal) and let the reader infer a whole contrast from model context. Humans usually name the thing.
 
-Fail: “The girls remember the trip and forget the streak.” (Streak of what — trips, games, app days?)
+Fail: “The crew remember the voyage and forget the streak.” (Streak of what — voyages, wins, log entries?)
 
-Pass: “The girls remember the trip.” or, if needed, “They remember the afternoon, not how many days they logged in a row.”
+Pass: “The crew remember the voyage.” or, if needed, “They remember the crossing, not how many days they logged in a row.”
 
 Rule: every noun must have a **clear referent** in the sentence or the one before it. If you need a sidebar explanation to know what the word points at, cut it or spell the referent out in plain words. Do not pack a not-A-but-B contrast into one clever noun.
 

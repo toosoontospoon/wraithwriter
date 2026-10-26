@@ -52,6 +52,24 @@ def sha256_file(path: Path) -> str:
     return sha256_bytes(path.read_bytes())
 
 
+# The repo is public. Swap personal examples from the skill for neutral ones.
+NEUTRAL_EXAMPLES = (
+    ("\u201cThe girls remember the trip and forget the streak.\u201d (Streak of what \u2014 trips, games, app days?)",
+     "\u201cThe crew remember the voyage and forget the streak.\u201d (Streak of what \u2014 voyages, wins, log entries?)"),
+    ("\u201cThe girls remember the trip.\u201d or, if needed, \u201cThey remember the afternoon, not how many days they logged in a row.\u201d",
+     "\u201cThe crew remember the voyage.\u201d or, if needed, \u201cThey remember the crossing, not how many days they logged in a row.\u201d"),
+)
+# Neutral labels for the external sources recorded in VENDORED.json.
+SKILL_LABEL = "skills/de-ai-revision/SKILL.md"
+SCRUB_LABEL = "skills/token-scrub/scrub.py"
+
+
+def neutralize(text: str) -> str:
+    for old, new in NEUTRAL_EXAMPLES:
+        text = text.replace(old, new)
+    return text
+
+
 def extract_sections(skill_text: str) -> str:
     """Return the three named sections, headings included, verbatim."""
     lines = skill_text.splitlines(keepends=True)
@@ -80,7 +98,7 @@ def extract_sections(skill_text: str) -> str:
     text = "".join(out)
     if not text.endswith("\n"):
         text += "\n"
-    return text
+    return neutralize(text)
 
 
 def banlist_rows(extract: str) -> list[tuple[str, str, str]]:
@@ -133,7 +151,7 @@ def _manifest(skill_path: Path | None, scrub_path: Path | None, previous: dict) 
         "scrub": dict(prev_sources.get("scrub") or {}),
     }
     if skill_path is not None:
-        sources["skill"] = {"path": str(skill_path), "sha256": sha256_file(skill_path)}
+        sources["skill"] = {"path": SKILL_LABEL, "sha256": sha256_file(skill_path)}
     if scrub_path is not None:
         new_hash = sha256_file(scrub_path)
         old = (prev_sources.get("scrub") or {}).get("sha256")
@@ -143,7 +161,7 @@ def _manifest(skill_path: Path | None, scrub_path: Path | None, previous: dict) 
             print(f"upstream scrub: match {new_hash}")
         else:
             print(f"upstream scrub: recorded {new_hash}")
-        sources["scrub"] = {"path": str(scrub_path), "sha256": new_hash}
+        sources["scrub"] = {"path": SCRUB_LABEL, "sha256": new_hash}
     files = {}
     for path in (SCRUB, EXTRACT):
         rel = str(path.relative_to(ROOT))
