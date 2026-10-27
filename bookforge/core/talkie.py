@@ -130,6 +130,21 @@ def complete(prompt: str, n_predict: int, seed: int, stop, *, ban_nl: bool = Fal
     return res.get("content") or "", rec
 
 
+def ping(endpoint: str | None = None, timeout: float = 5.0) -> tuple[bool, str]:
+    """GET ``{endpoint}/health``. Returns ``(ok, message)``. Does not raise on a down server."""
+    if not endpoint:
+        from bookforge.config import load_config
+        endpoint = (load_config().get("talkie") or {}).get("endpoint") or DEFAULTS["endpoint"]
+    url = str(endpoint).rstrip("/") + "/health"
+    try:
+        r = requests.get(url, timeout=timeout)
+    except Exception as e:
+        return False, f"talkie unreachable at {url}: {e}"
+    if r.status_code == 200:
+        return True, f"talkie ok at {url}"
+    return False, f"talkie health HTTP {r.status_code} at {url}"
+
+
 def trim_sentence(text: str) -> str:
     """Cut after the last sentence end. Leave the text alone if it has none."""
     import re

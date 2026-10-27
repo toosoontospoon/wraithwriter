@@ -45,7 +45,7 @@ def init(prompt, words, project, no_research):
 
 @cli.command()
 @click.option("--project", required=True, type=click.Path(exists=True))
-@click.option("--step", default=None, help="brainstorm|outline|initialize_cast_and_world|write|critique|revise|deai|audit|finalize|all")
+@click.option("--step", default=None, help="brainstorm|outline|initialize_cast_and_world|write|critique|revise|talkie|deai|audit|finalize|all")
 @click.option("--from", "from_step", default=None)
 @click.option("--to", "to_step", default=None)
 @click.option("--restart-from", default=None, help="Invalidate this step and everything after it (archives stale chapters)")
@@ -466,6 +466,51 @@ def structure_percent(project, write):
             c.setdefault("structure", {})["percent"] = pos[c["id"]]
     if write:
         ctx.save_outline(outline)
+
+@cli.group("talkie")
+def talkie_group():
+    """Opt-in rolling reword against a local base-model server."""
+
+
+@talkie_group.command("run")
+@click.option("--project", default=None, type=click.Path(exists=True))
+@click.option("--chapter", default=None)
+@click.option("--file", "file_", default=None, type=click.Path(exists=True), help="Reword this file")
+@click.option("--out", default=None, type=click.Path(), help="Write the reword here (with --file)")
+def talkie_run(project, chapter, file_, out):
+    """Reword a chapter, or a single file. Runs even when talkie.enabled is false."""
+    from bookforge.steps import talkie_chapter
+    if file_:
+        if not out:
+            raise click.UsageError("--file needs --out")
+        dest = Path(out)
+        text = Path(file_).read_text()
+        finals, summary = talkie_chapter.run_text(text, talkie_chapter.log_dir_for(dest))
+        talkie_chapter.write_out(dest, finals)
+        click.echo(f"wrote {dest} ({summary['paragraphs']} paragraphs, "
+                   f"{summary['passes']} passed, ${summary['jev_sol_usd']:.4f})")
+        click.echo(f"logs: {talkie_chapter.log_dir_for(dest)}")
+        return
+    if not project or not chapter:
+        raise click.UsageError("Give --project and --chapter, or --file and --out")
+    summary = talkie_chapter.run(_ctx(project), chapter, force=True)
+    if summary.get("skipped"):
+        click.echo(f"talkie skipped for {chapter}")
+        return
+    click.echo(f"{chapter}: {summary['paragraphs']} paragraphs, {summary['passes']} passed, "
+               f"${summary['jev_sol_usd']:.4f}")
+
+
+@talkie_group.command("ping")
+@click.option("--endpoint", default=None, help="Server base URL (default from config)")
+def talkie_ping(endpoint):
+    """Check the local completion server's /health."""
+    from bookforge.core import talkie
+    ok, message = talkie.ping(endpoint)
+    click.echo(message)
+    if not ok:
+        raise SystemExit(1)
+
 
 if __name__ == "__main__":
     main()

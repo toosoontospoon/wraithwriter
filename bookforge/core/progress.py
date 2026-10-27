@@ -8,15 +8,17 @@ import shutil
 from bookforge.core.io import read_json, stable_hash
 
 STEP_ORDER = ["brainstorm", "outline", "initialize_cast_and_world", "write", "critique", "revise",
-              "deai", "audit", "finalize"]
-CHAPTER_STEPS = ["write", "critique", "revise", "deai"]
-STATUS_FOR = {"write": "drafted", "critique": "critiqued", "revise": "revised", "deai": "deai_done"}
-STATUS_RANK = {"": 0, None: 0, "drafted": 1, "critiqued": 2, "revised": 3, "deai_done": 4}
+              "talkie", "deai", "audit", "finalize"]
+CHAPTER_STEPS = ["write", "critique", "revise", "talkie", "deai"]
+STATUS_FOR = {"write": "drafted", "critique": "critiqued", "revise": "revised", "talkie": "talkie",
+              "deai": "deai_done"}
+STATUS_RANK = {"": 0, None: 0, "drafted": 1, "critiqued": 2, "revised": 3, "talkie": 4, "deai_done": 5}
 MODULES = {"brainstorm": "brainstorm", "outline": "outline", "initialize_cast_and_world": "initialize_cast_and_world",
            "write": "write_chapter", "critique": "critique_chapter", "revise": "revise_chapter",
-           "deai": "deai_chapter", "audit": "audit", "finalize": "finalize"}
+           "talkie": "talkie_chapter", "deai": "deai_chapter", "audit": "audit", "finalize": "finalize"}
 ALIASES = {"init": "initialize_cast_and_world", "initialize": "initialize_cast_and_world",
-           "draft": "write", "polish": "audit", "global_polish": "audit", "de-ai": "deai", "deai_chapter": "deai"}
+           "draft": "write", "polish": "audit", "global_polish": "audit", "de-ai": "deai", "deai_chapter": "deai",
+           "talkie_chapter": "talkie"}
 
 
 def canonical_step(name: str) -> str:
@@ -51,8 +53,16 @@ def input_hash(ctx, step: str, ch: str | None = None) -> str:
     if step == "revise":
         return stable_hash([_file_hash(ctx.chapter_path(ch, "draft")),
                             _file_hash(ctx.state_dir / "critiques" / f"{ch}.json")])
+    if step == "talkie":
+        from bookforge.config import load_config
+        revised = ctx.chapter_path(ch, "revised")
+        src = revised if revised.exists() else ctx.chapter_path(ch, "draft")
+        enabled = bool((load_config().get("talkie") or {}).get("enabled"))
+        return stable_hash([_file_hash(src), enabled])
     if step == "deai":
-        return _file_hash(ctx.chapter_path(ch, "revised"))
+        talkie_p = ctx.chapter_path(ch, "talkie")
+        src = talkie_p if talkie_p.exists() else ctx.chapter_path(ch, "revised")
+        return _file_hash(src)
     if step in ("audit", "finalize"):
         texts = [stable_hash(ctx.best_chapter_text(c["id"])) for c in ctx.load_outline()]
         return stable_hash(texts + ([_run_id(ctx, "audit")] if step == "finalize" else []))
@@ -153,11 +163,12 @@ def reset_progress_after_step(ctx, step_name, chapter: str | None = None):
         if s in later and (not chapter or not ch or ch == chapter or s not in CHAPTER_STEPS):
             del ctx.progress["hashes"][k]
     ctx.progress["completed"] = [c for c in ctx.progress["completed"] if c not in later]
-    floor = {"write": 0, "critique": 1, "revise": 2, "deai": 3}.get(step, 0 if idx < STEP_ORDER.index("audit") else None)
+    floor = {"write": 0, "critique": 1, "revise": 2, "talkie": 3, "deai": 4}.get(
+        step, 0 if idx < STEP_ORDER.index("audit") else None)
     if floor is not None:
         for ch in chapters:
             if STATUS_RANK.get(ctx.progress["chapter_status"].get(ch, ""), 0) > floor:
-                ctx.progress["chapter_status"][ch] = ["", "drafted", "critiqued", "revised"][floor]
+                ctx.progress["chapter_status"][ch] = ["", "drafted", "critiqued", "revised", "talkie"][floor]
     if idx <= STEP_ORDER.index("write"):
         arch = ctx.project_dir / "archive" / datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
         canon = ctx.canon()

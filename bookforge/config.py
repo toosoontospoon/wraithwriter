@@ -73,6 +73,7 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "extract": {"tier": "planner"},  # moved to Sol 2026-10-12 (utility model hallucinated canon)
             "craft_extract": {"tier": "utility"},
             "deconflict": {"tier": "planner"},  # moved to Sol 2026-10-12 (utility model hallucinated canon)
+            "talkie_fix": {"tier": "planner"},  # budgeted fact fix inside the talkie reword
         },
         "default_role": "summary",
         # USD per 1M tokens, optional. Unknown models are logged with cost 0.
@@ -137,6 +138,28 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # (also settable per project as metadata.json "style_bible_dir").
     "style": {"bible_dir": None, "prefix_tokens": 2500, "planner_tokens": 2000, "planner_voice_tokens": 1500},
     # Craft layer (CRAFT_DESIGN.md). Default framework: Save the Cat beats + Swain scene/sequel cards.
+    # Opt-in base-model reword (core/talkie_roll.py). Off by default: the pipeline step
+    # makes no talkie, Jev or Sol calls until enabled. `bookforge talkie run` is an explicit opt-in.
+    "talkie": {
+        "enabled": False,
+        "endpoint": "http://127.0.0.1:8080",
+        "n_rerolls": 4,
+        "history_window": 2,
+        "edit_budget": 0.15,
+        "sol_tries": 2,
+        "copy_max": 0.35,
+        "splice_copy_max": 0.5,
+        "splice_seeds": 2,
+        "dedupe_jaccard": 0.4,
+        "jev_threshold": 0.5,
+        "fewshot_path": None,
+        "temperature": 0.8,
+        "min_p": 0.05,
+        "repeat_penalty": 1.1,
+        "timeout_s": 3600,
+        "cap_usd": 0.50,
+        "targeted": {"enabled": True, "edit_budget": 0.25, "rounds": 1},
+    },
     "craft": {
         "enabled": True,
         "framework": "save_the_cat",       # save_the_cat | three_act | seven_point | story_grid | hero_journey

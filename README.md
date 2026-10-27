@@ -8,6 +8,7 @@ WraithWriter is a command-line pipeline for planning, drafting and revising long
 - per-scene drafting from a story pack (bible, continuity sheet, recent chapters, voice sheets)
 - critique
 - a single editor pass
+- an optional talkie reword (`talkie.enabled`, off by default)
 - de-AI checks
 - canon extraction and continuity tracking
 
@@ -90,6 +91,35 @@ To try it without calling the editor:
 
 On a 9,700-word test chapter, the packet cut editor input from about 62k to about 17.6k tokens (72% less). Jev cost under half a cent per chapter.
 
+## Talkie reword
+
+Off unless `talkie.enabled` is true. The pipeline step then sits after revise and before de-AI. It writes `manuscript/<id>_talkie.txt` and does not overwrite the draft or the revision. `bookforge talkie run` is an explicit opt-in even when the flag is false.
+
+```yaml
+talkie:
+  enabled: false
+  endpoint: http://127.0.0.1:8080
+  n_rerolls: 4
+  history_window: 2
+  edit_budget: 0.15          # Sol may write at most max(3, this fraction of the paragraph)
+  sol_tries: 2
+  copy_max: 0.35             # source 4-gram share above this fails a candidate
+  splice_copy_max: 0.5
+  splice_seeds: 2
+  dedupe_jaccard: 0.4
+  jev_threshold: 0.5
+  fewshot_path: null         # null uses the built-in synthetic few-shot
+  temperature: 0.8
+  min_p: 0.05
+  repeat_penalty: 1.1
+  timeout_s: 3600
+  cap_usd: 0.50              # Jev spend cap for the run
+  targeted:
+    enabled: true            # only paragraphs that still drop a fact
+    edit_budget: 0.25
+    rounds: 1
+```
+
 ## De-AI rules
 
 Fiction narration follows the style bible. That voice wins over any email register, and banned words and fragments are allowed inside quoted dialogue. The narrator does not get a "human slip" texture rule.
@@ -116,6 +146,7 @@ Flags:
 | `deai.max_tell_drop` | 0.5 | How far the 0-10 detector score may fall before the guard acts |
 | `deai.rewrite_residual` | false | After the editor, rewrite paragraphs that still have a severity >= 2 narration hit, then re-scrub. The duties-gate rollback still applies. Off adds no LLM call |
 | `deai.external_detector` | `provider: none` | Report-only hook after the final scrub. `pangram` reads the env var named by `api_key_env` (default `PANGRAM_API_KEY`) and records `skipped: no key` when it is unset. It never edits the chapter and never logs the key |
+| `talkie.enabled` | false | Opt-in reword. Off makes zero talkie, Jev or Sol calls. See the block below |
 | `screen.enabled` | true | Code checks still run without `TYPESAFE_API_KEY`. Jev is skipped cleanly |
 | `screen.deai_questions` | true | The six de-AI questions on the existing per-section Jev call |
 

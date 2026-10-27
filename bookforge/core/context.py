@@ -161,7 +161,7 @@ class BookContext:
         return self.manuscript_dir / f"{chapter_id}_{kind}.txt"
 
     def best_chapter_text(self, chapter_id: str) -> str:
-        for kind in ("final", "revised", "draft"):
+        for kind in ("final", "talkie", "revised", "draft"):
             p = self.chapter_path(chapter_id, kind)
             if p.exists():
                 return p.read_text()
