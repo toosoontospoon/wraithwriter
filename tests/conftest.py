@@ -15,7 +15,18 @@ from fakes import FakeLLM  # noqa: E402
 def isolated(tmp_path, monkeypatch):
     monkeypatch.setenv("HOME", str(tmp_path / "home"))
     monkeypatch.setenv("BOOKFORGE_CONFIG", str(tmp_path / "home" / "nope.yaml"))
-    config.set_config({"llm": {"json_retries": 1}})
+    real_set = config.set_config
+
+    def _set_config(cfg):
+        # Library default is require_human_seed true. Existing drafts have no seed file.
+        cfg = dict(cfg or {})
+        write = dict(cfg.get("write") or {})
+        write.setdefault("require_human_seed", False)
+        cfg["write"] = write
+        real_set(cfg)
+
+    monkeypatch.setattr(config, "set_config", _set_config)
+    _set_config({"llm": {"json_retries": 1}})
     yield
     llm.set_fake(None)
     jev.set_fake(None)

@@ -5,7 +5,7 @@ WraithWriter is a command-line pipeline for planning, drafting and revising long
 - brainstorm
 - outline (each chapter gets a `structure` block; lint it with `bookforge structure check`)
 - cast and world
-- per-scene drafting from a story pack (bible, continuity sheet, recent chapters, voice sheets)
+- per-scene drafting from a story pack (bible, continuity sheet, recent chapters, voice sheets), opening on a human seed when `write.require_human_seed` is true (the default)
 - critique
 - a single editor pass
 - de-AI checks

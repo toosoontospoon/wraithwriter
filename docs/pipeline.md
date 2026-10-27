@@ -7,7 +7,7 @@ Step order is `STEP_ORDER` in `bookforge/core/progress.py`. `bookforge run --ste
 | 1 | `brainstorm` | book | Optional web research on the xAI responses API (`brainstorm.web_research`, default true; skipped when `init --no-research` set the project), cached in `state/web_research.json` for the same premise. The search uses the xAI provider and the brainstorm model's name. Then two brainstorm-role calls: themes and genre, then an author persona. Saved on `metadata.brainstorm`. |
 | 2 | `outline` | book | Six cached phases under `state/outline_work/`: structure, cast, world, per-chapter scene expansion, assessment, then the craft plan (`state/craft/ledger.json`) when `craft.enabled` is true. Chapter ids are `ch01` onward. Length is estimated from beats and is not an input. |
 | 3 | `initialize_cast_and_world` | book | Deepens the existing cast and world (merge, does not replace ids) and seeds the canon ledger. |
-| 4 | `write` | chapter | One drafter call per beat group. Groups are split so a scene stays within `context.scene_max_words_per_call` (6000). Each scene is resumed from `progress.scenes` if that scene file already exists. Optional `craft.rerank` (default false) adds a second ending plus a judge call when tension is at least 7. |
+| 4 | `write` | chapter | One drafter call per beat group. Groups are split so a scene stays within `context.scene_max_words_per_call` (6000). With `write.require_human_seed` (default true) the first scene must open on a human seed file; the model continues after that text and does not rewrite it. Each scene is resumed from `progress.scenes` if that scene file already exists. Optional `craft.rerank` (default false) adds a second ending plus a judge call when tension is at least 7. |
 | 5 | `critique` | chapter | Deterministic checks (names, POV, AI tells), thread obligations, and craft rules, plus one planner-tier critique. Saved at `state/critiques/<id>.json`. |
 | 6 | `revise` | chapter | One editor pass. With `screen.enabled` (default true) the editor sees a revision packet. Then canon re-extraction when `canon.reextract_after_revise` is true. `voice.revoice` is not called from this step. `voice.enabled` defaults to false. |
 | 7 | `deai` | chapter | Fiction-mode token scrub and detector autofix. No LLM call unless `deai.rewrite_residual` is true. Then a duties gate (thread obligations plus craft rules) that can roll back to the autofixed draft, a final scrub, and a report-only external detector. |
@@ -15,6 +15,22 @@ Step order is `STEP_ORDER` in `bookforge/core/progress.py`. `bookforge run --ste
 | 9 | `finalize` | book | Assembles the manuscript from de-AI'd chapters and asks for a title and blurb. Refuses to run when chapters are unfinished or the audit is missing or failed, unless `bookforge run --step finalize --force`. |
 
 `write`, `critique`, `revise`, and `deai` are the chapter steps. The others run once for the book.
+
+## Human seed
+
+The write step refuses to draft a chapter when `write.require_human_seed` is true (the default) and the first scene has no non-whitespace seed. The chapter file is `<project>/manuscript/<chapter_id>/human_seed.md`. A scene file `<project>/manuscript/<chapter_id>/sceneK/human_seed.md` (`scene1` or `scene01`) replaces it for that scene. The chapter seed is used only for the first scene.
+
+The file is plain UTF-8 markdown. Optional YAML front matter (`---` … `---`) is removed, including the newline after the closing `---`. The body is not otherwise edited. Trailing whitespace at the very end of the body is left off the join; the continuation is appended immediately after the remaining prefix. Scrub and `clean_prose` run on the continuation only. The scene draft and the chapter draft both start with that prefix. Craft scrub inside the write step is not allowed to replace the prefix. `protect.py` cannot cheaply mark the seed for later edit/revise passes without turning exact-line protection on for unrelated lines (`norm()` also folds punctuation). That later-pass gap is a known limit.
+
+A TTY may paste a seed (a line that is only `.`, or EOF). It is saved to the chapter seed path. A non-TTY gets an error that names the path and the format. No prompt.
+
+Raw model text, still unscrubbed, plus the seed prefix:
+
+```
+bookforge run --project P --step write --chapter ch13 --raw-dir DIR
+```
+
+That also writes `DIR/ch13-v1-gemma-raw.txt` (then `v2`, …). The family is `gemma` when the write-role model id contains `gemma`. Scene breaks match `join_scenes`. `write.raw_dir` is the same directory when the flag is omitted. The config-init template points this drafter at Gemma on the Hugging Face router (32k context; USD per 1M input 0.48, cached 0.10, output 1.44). Talkie stays an opt-in fallback reword (`talkie.enabled` false), not the default writer.
 
 `revise.recritique` and `revise.max_passes` are in `DEFAULT_CONFIG` and are not read by the revise step. The editor pass count is one.
 

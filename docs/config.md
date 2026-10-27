@@ -128,6 +128,19 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 | `critical_auto_confidence` | `0.85` | Critical conflicts need at least this confidence to auto-resolve. |
 | `reextract_after_revise` | `true` | The revise step re-extracts canon from the edited text. |
 
+## `write`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `require_human_seed` | `true` | Before drafting, the first scene needs a non-whitespace human seed. Non-TTY runs raise and name the path. A TTY can paste one (end with a line that is only `.`, or EOF); it is saved to the chapter seed path. Set `false` to draft with no seed. |
+| `raw_dir` | `null` | When set, the write step also writes `<raw_dir>/<chapter_id>-vN-<family>-raw.txt`. `N` is the next free version (`v1`, then `v2`). `family` is `gemma` when the write-role model id contains `gemma`, otherwise a short slug. Same flag as `bookforge run --raw-dir`. |
+
+Seed path: `<project>/manuscript/<chapter_id>/human_seed.md`. It applies to the chapter's first scene. Optional per-scene override: `<project>/manuscript/<chapter_id>/sceneK/human_seed.md` (`scene1` and `scene01` both work). The override replaces the chapter seed for that scene.
+
+Format: plain UTF-8 markdown. Optional YAML front matter is one opening block (`---` line, YAML, closing `---` line). Only that block and the newline that ends the closer are removed. The body is not scrubbed, cleaned, or normalized. Trailing whitespace at the very end of the body is omitted at the join with the continuation. Trailing spaces earlier in the body stay. The model is told the opening is already written and must continue after it without repeating it. Scrub and clean run on the continuation only.
+
+`protect.py` does not mark those paragraphs. Exact-line protection is off unless the chapter or `BOOKFORGE_PROTECT_EXACT_LINES` turns it on, and `norm()` folds punctuation, so a verbatim seed cannot be registered there without also protecting unrelated `KEEP` lines. The write step puts the opening back if craft scrub or `enforce_first_line` rewrites it. Later edit and revise passes do not have a seed lock. That is a known limit.
+
 ## `revise`
 
 | Key | Default | Meaning |

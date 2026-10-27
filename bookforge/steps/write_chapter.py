@@ -4,6 +4,7 @@ Resumable at scene granularity: each scene's text lives in manuscript/chNN/scene
 and progress.scenes[ch][n] records which sub-steps finished for which scene card.
 """
 import json
+from pathlib import Path
 
 from pydantic import Field
 
@@ -69,13 +70,45 @@ def write_max_tokens(words: int, role: str = "write") -> int:
     return base + 8000
 
 
-def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
+def _append_continuation(text: str, opening: str, continuation: str, first_chunk: bool) -> str:
+    """Append a scrubbed continuation. The first chunk of a seeded scene continues after the opening."""
+    if first_chunk and opening and not text:
+        return opening + continuation
+    return text + (("\n\n" if text else "") + continuation)
+
+
+def _raw_scene(opening: str, chunks: list[str]) -> str:
+    """Seed prefix plus raw model continuations, joined the same way as the draft."""
+    text = ""
+    for i, chunk in enumerate(chunks):
+        if opening and i == 0:
+            text = opening + chunk
+        else:
+            text += ("\n\n" if text else "") + chunk
+    return text
+
+
+def _keep_opening(text: str, opening: str) -> str:
+    """Scrub and craft may rewrite the continuation only. Put the seed back if they touched it."""
+    from bookforge.core.human_seed import restore_opening
+    if not opening:
+        return scrub(text)
+    restored = restore_opening(text, opening)
+    if not restored.startswith(opening):
+        restored = opening + restored
+    return opening + scrub(restored[len(opening):])
+
+
+def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=None):
+    from bookforge.core.human_seed import seed_for_scene
     sp = ctx.progress["scenes"].setdefault(chapter["id"], {}).setdefault(str(scene["scene_number"]), {})
     card = _scene_card_hash(chapter, scene)
     if sp.get("card") != card:
         sp.clear()
         sp["card"] = card
     path = ctx.scene_path(chapter["id"], scene["scene_number"], "draft")
+    opening = seed_for_scene(ctx, chapter, scene)
+    fresh_raw = None
     if not (sp.get("written") and path.exists()):
         brief = craft.brief(ctx, chapter, scene)
         if not sp.get("beats"):
@@ -84,6 +117,7 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
         sc = {**scene, "beats": sp["beats"], "craft_brief": brief}
         parts = ctx.plan_parts(sc)
         text = ""
+        raw_chunks = []
         from bookforge.core import length as _len, pack
         for i, beats in enumerate(parts, 1):
             words = _len.ceiling(sum(_len.beat_words(b) for b in beats))
@@ -91,15 +125,22 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
                                               words, i, len(parts))
             provider, model = resolve_role("write")
             system, prompt = pack.fit_write_context(ctx, system, prompt, provider, model)
+            if opening and i == 1:
+                prompt += ("\n\nALREADY WRITTEN (verbatim; continue directly after this; "
+                           "do not repeat or rewrite it):\n" + opening)
             (step_dir / f"prompt_s{scene['scene_number']:02d}_p{i}.txt").write_text(f"=== SYSTEM ===\n{system}\n\n=== USER ===\n{prompt}")
             out = llm_call(prompt, system=system, role="write", temperature=0.8, max_tokens=write_max_tokens(words))
             if i == len(parts):
                 out = craft_rerank(ctx, chapter, scene, prompt, system, out, words, step_dir)
-            text += ("\n\n" if text else "") + scrub(clean_prose(out))
+            raw_chunks.append(out)
+            text = _append_continuation(text, opening, scrub(clean_prose(out)), i == 1)
         if scene.get("scene_number") == (chapter.get("scenes") or [{}])[0].get("scene_number"):
             from bookforge.core.rules_check import enforce_first_line
             text = enforce_first_line(chapter, text)
+            if opening:
+                text = _keep_opening(text, opening)
         ctx.write_text(path, text)
+        fresh_raw = _raw_scene(opening, raw_chunks)
         sp["written"] = True
         sp.pop("summarized", None)
         sp.pop("canon", None)
@@ -121,10 +162,15 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
     if not sp.get("craft"):
         rep = craft.process_scene(ctx, chapter["id"], scene, text, step_dir)
         if rep["text"] != text:  # verbatim autofixes (e.g. prophecy wording)
-            text = scrub(rep["text"])
+            text = _keep_opening(rep["text"], opening) if opening else scrub(rep["text"])
+            ctx.write_text(path, text)
+        elif opening and not text.startswith(opening):
+            text = _keep_opening(text, opening)
             ctx.write_text(path, text)
         sp["craft"] = {"events": rep["events"], "issues": len(rep["issues"])}
         ctx.save_progress()
+    if raw_scenes is not None:
+        raw_scenes.append(fresh_raw if fresh_raw is not None else text)
     return text
 
 
@@ -162,23 +208,49 @@ def update_chapter_summaries(ctx, chapter_id):
     ctx.save_summaries(s)
 
 
-def run(ctx, chapter_id: str):
+def _raw_dir_for(ctx, raw_dir):
+    from bookforge.config import load_config
+    if raw_dir:
+        return Path(raw_dir)
+    hooked = getattr(ctx, "write_raw_dir", None)
+    if hooked:
+        return Path(hooked)
+    configured = (load_config().get("write") or {}).get("raw_dir")
+    return Path(configured) if configured else None
+
+
+def _write_raw_file(ctx, chapter_id, raw_scenes, raw_dir):
+    from bookforge.core.human_seed import next_raw_path, raw_family
+    directory = _raw_dir_for(ctx, raw_dir)
+    if not directory or not raw_scenes:
+        return None
+    directory.mkdir(parents=True, exist_ok=True)
+    _provider, model = resolve_role("write")
+    path = next_raw_path(directory, chapter_id, raw_family(model))
+    path.write_text(join_scenes(raw_scenes), encoding="utf-8")
+    return path
+
+
+def run(ctx, chapter_id: str, raw_dir=None):
+    from bookforge.core.human_seed import ensure_chapter_seed
     inputs = progress.input_hash(ctx, "write", chapter_id)
     chapter = ctx.chapter(chapter_id)
     if not chapter:
         raise ValueError(f"Chapter {chapter_id} not found in outline")
     if not chapter.get("scenes"):
         raise ValueError(f"No scenes for {chapter_id}; run outline first")
+    ensure_chapter_seed(ctx, chapter)
     step_dir = ctx.new_step_folder(f"write_{chapter_id}")
     (step_dir / "input_snapshot.json").write_text(json.dumps(chapter, indent=2))
     print(f"Writing {chapter_id}: {chapter['title']} ({len(chapter['scenes'])} scenes)")
-    texts = []
+    texts, raw_scenes = [], []
     for scene in chapter["scenes"]:
-        texts.append(write_scene(ctx, chapter, scene, "\n\n".join(texts), step_dir))
+        texts.append(write_scene(ctx, chapter, scene, "\n\n".join(texts), step_dir, raw_scenes))
         print(f"   scene {scene['scene_number']}: {len(texts[-1].split())} words")
     draft = join_scenes(texts)
     ctx.write_text(ctx.chapter_path(chapter_id, "draft"), draft)
     (step_dir / "draft.txt").write_text(draft)
+    _write_raw_file(ctx, chapter_id, raw_scenes, raw_dir)
     update_chapter_summaries(ctx, chapter_id)
     craft.refine_next(ctx, chapter_id)
     canon = ctx.canon()

@@ -28,7 +28,20 @@ def summarize(text: str, what: str, words: int = 120) -> str:
 
 
 def join_scenes(texts: list[str]) -> str:
-    return SCENE_BREAK.join(t.strip() for t in texts if t.strip())
+    """Join scenes with a break. The first scene keeps its leading bytes.
+
+    A human seed is the opening of that scene. ``strip()`` on it would drop a
+    leading space or newline that belongs to the seed. Later scenes are still
+    stripped. Trailing whitespace on every scene is dropped so the break sits
+    on its own lines. The seed prefix has already separated end-of-body
+    whitespace, so this does not eat the locked opening.
+    """
+    parts = []
+    for t in texts:
+        if not t or not t.strip():
+            continue
+        parts.append(t.rstrip() if not parts else t.strip())
+    return SCENE_BREAK.join(parts)
 
 
 def split_scenes(text: str) -> list[str]:
