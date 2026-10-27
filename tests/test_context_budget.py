@@ -110,3 +110,22 @@ def test_oversized_facts_are_condensed_once_per_scene(project, fake):
     assert sum("SCENE: 2\n" in p for p in condensed) == 1
     for _r, prompt, system in ((r, p, s) for r, p, s in fake.calls if r == "write"):
         assert pack.prompt_token_estimate(system + "\n\n" + prompt) <= budget
+
+
+def test_condensed_facts_render_as_lines_not_json():
+    assert pack._facts_lines({"facts": ["A is lame.", "B owes C."]}) == "- A is lame.\n- B owes C."
+    assert pack._facts_lines('{"facts": ["x"]}') == "- x"
+    assert "{" not in pack._facts_lines({"beats": ["y"]})
+
+
+def test_preview_does_not_call_the_condenser(project, fake):
+    _setup(project)
+    canon = project.canon()
+    canon.add_fact("scene_detail", ["finn_cooper"],
+                   "FACTUNIQUE " + ("rivet " * 30000), "established", "local")
+    canon.save()
+    config.set_config({"write": {"context_budget_tokens": 4000, "require_human_seed": False}})
+    before = len([c for c in fake.calls if "CONDENSE FACTS" in c[1]])
+    pack.preview_token_counts(project, "ch01", 1, "write")
+    after = len([c for c in fake.calls if "CONDENSE FACTS" in c[1]])
+    assert after == before

@@ -123,3 +123,11 @@ def test_preview_prints_both_character_filter_estimates(project, fake):
     assert len(fake.calls) == before
     # write_chapter still drafts; the filter must not be required for that path.
     write_chapter.run(project, "ch01")
+
+
+def test_honorific_alone_does_not_match_another_entry():
+    labels = ["Lord Ashby"]
+    assert pack._label_hit("Lord Ashby", labels)
+    assert pack._label_hit("Ashby", labels)
+    assert not pack._label_hit("Lord Brandt", labels)
+    assert not pack._label_in_blob("Lord Ashby", "lord brandt spoke.")

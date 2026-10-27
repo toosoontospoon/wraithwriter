@@ -150,16 +150,26 @@ def _entry_labels(title: str, body: str) -> list[str]:
     return labels
 
 
+_HONORIFICS = {"lord", "lady", "sir", "dame", "mr", "mr.", "mrs", "mrs.", "miss", "master", "mistress",
+               "dr", "dr.", "doctor", "father", "brother", "sister", "the", "old", "young", "captain"}
+
+
+def _first_name(s: str) -> str:
+    words = [w for w in s.lower().split() if w not in _HONORIFICS]
+    return words[0] if words else ""
+
+
 def _label_hit(wanted: str, labels: list[str]) -> bool:
     w = (wanted or "").lower().strip()
     if not w:
         return False
-    wfirst = w.split()[0]
+    wfirst = _first_name(w)
     for lab in labels:
         low = lab.lower().strip()
         if not low:
             continue
-        if w == low or wfirst == low or w == low.split()[0] or wfirst == low.split()[0]:
+        lfirst = _first_name(low)
+        if w == low or (wfirst and wfirst == lfirst) or (wfirst and wfirst == low) or (lfirst and w == lfirst):
             return True
     return False
 
@@ -170,7 +180,9 @@ def _label_in_blob(label: str, blob: str) -> bool:
         return False
     if low in blob:
         return True
-    first = low.split()[0]
+    first = _first_name(low)
+    if not first:
+        return False
     return re.search(rf"(?<![a-z0-9]){re.escape(first)}(?![a-z0-9])", blob) is not None
 
 
@@ -594,13 +606,37 @@ def _shrink_to_estimate(text: str, room: int) -> str:
     return best
 
 
+def _facts_lines(res) -> str:
+    """Render the condenser's reply as plain bullet lines, never raw JSON."""
+    if isinstance(res, str):
+        try:
+            res = json.loads(res)
+        except ValueError:
+            return res.strip()
+    items = []
+    if isinstance(res, dict):
+        for v in res.values():
+            if isinstance(v, list):
+                items.extend(v)
+            elif isinstance(v, str):
+                items.append(v)
+    elif isinstance(res, list):
+        items = list(res)
+    return "\n".join(f"- {str(x).strip()}" for x in items if str(x).strip())
+
+
 def _condense_facts(ctx, chapter, scene, facts_text: str, room: int) -> str:
-    """One plan-role condensation per scene, reused by later write calls."""
+    """One plan-role condensation per scene, reused by later write calls.
+
+    ``ctx._no_llm`` (set by ``pack preview``) skips the call and shrinks the raw facts instead.
+    """
     key = (chapter.get("id"), scene.get("scene_number"))
     cache = getattr(ctx, "_condensed_facts", None)
     if cache is None:
         cache = {}
         ctx._condensed_facts = cache
+    if key not in cache and getattr(ctx, "_no_llm", False):
+        return _shrink_to_estimate("CONTINUITY AND FACTS (truncated for preview):\n" + facts_text, room)
     if key not in cache:
         card = {k: scene.get(k) for k in ("scene_number", "pov", "location", "characters_present", "purpose")
                 if scene.get(k)}
@@ -611,9 +647,9 @@ def _condense_facts(ctx, chapter, scene, facts_text: str, room: int) -> str:
             f"SCENE CARD: {json.dumps(card)}\n"
             f"SCENE: {scene.get('scene_number')}\n"
             f"FACTS:\n{facts_text[:8000]}\n"
-            'Output ONLY JSON: {"beats": ["condensed continuity"]}',
+            'Output ONLY JSON: {"facts": ["one short continuity fact per item"]}',
             role="plan", json_mode=True, temperature=0.1, max_tokens=800)
-        cache[key] = res if isinstance(res, str) else json.dumps(res)
+        cache[key] = _facts_lines(res)
     return _shrink_to_estimate("CONTINUITY AND FACTS (condensed):\n" + cache[key], room)
 
 
@@ -738,6 +774,7 @@ def write_prompt_for_scene(ctx, chapter_id: str, scene_number: int) -> tuple[str
 
 def preview_token_counts(ctx, chapter_id: str, scene_number: int, role: str = "write") -> tuple[int, int, int]:
     """(prompt that would be sent, with the character filter, without it). No LLM call."""
+    ctx._no_llm = True
     chapter = ctx.chapter(chapter_id)
     if not chapter:
         raise ValueError(f"Chapter {chapter_id} not found")
