@@ -60,11 +60,20 @@ No chapter may drag or feel unnecessary. Worldbuilding colour and whimsy are wel
 
 - FAIL: no `plot_function`; no `value_turn` or a turn that doesn't change; a `plot_function` that duplicates a
   neighbour (exact match, or word overlap >= 0.6).
-- WARN: missing fields; unknown enum values; a strand with no purpose line; a Save the Cat beat more than 12 points
-  from its target %; runs of the same `chapter_type` or `ending` (default 3+); acts outside their healthy share
-  (1: 15-30%, 2a/2b: 18-32%, 3: 12-30%); acts out of order; setups with no later payoff; setups whose thread pays
-  off in a chapter that doesn't list it.
-- INFO: setups that aren't linked to a thread or ledger entry.
+- WARN: a required field other than `plot_function` and `value_turn` is missing; an unknown enum value; a strand
+  with no purpose line; a Save the Cat beat more than 12 points from its target %; a skill-banlist or
+  contrast-frame hit in `plot_function`, `a_purpose`, `b_purpose`, the chapter summary, or a scene beat
+  (`prose_tell`); runs of the same `chapter_type` or `ending` (default 3 or more, `--run-limit`); acts outside
+  their healthy share (1: 15-30%, 2a/2b: 18-32%, 3: 12-30%) or an act with no chapters; acts out of order; a
+  setup that cites an unknown thread; a setup with no later payoff; a thread that pays off in a later chapter
+  whose `structure.payoffs` does not list it; a thread with later beats but no `payoff_chapter` and no later
+  chapter listing the payoff. A series thread (`payoff_chapter` starting with `book`, or type `series` with no
+  payoff chapter) is not a missing payoff.
+- INFO: a setup that is not linked as `thread:<id>` or `ledger:<n>`.
+
+Duplicate `plot_function` text is a FAIL when the strings match, ignoring case, or when token overlap is at
+least 0.6. `threads.yaml` is loaded for the thread checks. Word counts come from the manuscript. Unwritten
+chapters use the mean length of the chapters that have text (`structure percent` uses the same rule).
 
 ## CLI
 
