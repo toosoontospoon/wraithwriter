@@ -94,7 +94,7 @@ bookforge structure check --project projects/myproject
 
 `screen.enabled` defaults to true. `revise` runs free code checks, then one Jev call per section on the pinned model `jev-1.13.0`, then sends the editor a packet of flagged sections. The editor call is skipped only when nothing is flagged and there are no chapter-level findings (`screen.skip_edit_if_clean`, default true). A missing `TYPESAFE_API_KEY` skips Jev and keeps the code checks.
 
-Timetable, session-subject, and afternoon-only checks do nothing until `screen.timetable_file`, `screen.subjects`, `screen.session_subjects`, or `screen.afternoon_only` is set. Those default empty. `screen.facts_dir` defaults empty, which writes `<chapter>-facts.json` under `state/facts/` (or `<bible>/book<N>/` when that directory exists), not under `plans/`. `screen.max_new_per_scene` defaults to 0, which records new names and does not flag them.
+Timetable, session-subject, and afternoon-only checks do nothing until `screen.timetable_file`, `screen.subjects`, `screen.session_subjects`, or `screen.afternoon_only` is set. Those default empty. `screen.facts_dir` defaults empty, which writes `<chapter>-facts.json` under `state/facts/`, or under `<bible>/book<N>/` when `metadata.book` is set and that directory exists. `screen.max_new_per_scene` defaults to 0, which records new names and does not flag them.
 
 ```bash
 bookforge screen facts --project projects/myproject --chapter ch01
