@@ -174,16 +174,24 @@ def _label_hit(wanted: str, labels: list[str]) -> bool:
     return False
 
 
+def _word_in(phrase: str, blob: str) -> bool:
+    """True when ``phrase`` appears as whole words, not inside a longer word."""
+    low = phrase.lower().strip()
+    if not low:
+        return False
+    return re.search(rf"(?<![a-z0-9]){re.escape(low)}(?![a-z0-9])", blob) is not None
+
+
 def _label_in_blob(label: str, blob: str) -> bool:
     low = label.lower().strip()
     if not low:
         return False
-    if low in blob:
+    if _word_in(low, blob):
         return True
     first = _first_name(low)
-    if not first:
+    if not first or first == low:
         return False
-    return re.search(rf"(?<![a-z0-9]){re.escape(first)}(?![a-z0-9])", blob) is not None
+    return _word_in(first, blob)
 
 
 def filter_characters_markdown(ctx, chapter: dict, text: str) -> str:
@@ -714,7 +722,7 @@ def _build_write_budgeted(ctx, chapter, scene, beats, so_far, ceiling_words, par
 
 
 def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, ceiling_words: int,
-                part: int = 1, parts: int = 1) -> tuple[str, str]:
+                part: int = 1, parts: int = 1, character_filter=None) -> tuple[str, str]:
     """(system, user) for one scene write call. Cached prefix first (system, then the chapter pack);
     the chapter so far, the scene's job and the length line last.
 
@@ -749,10 +757,10 @@ def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, 
                   "Before you answer, check your scene against the continuity sheet and the chapter so far "
                   "(names, places, who knows what, objects, injuries, time of day) and fix any slip. "
                   "Output ONLY the prose.")
-    return system_for(ctx, chapter), chapter_pack(ctx, chapter) + "\n\n".join(b for b in blocks if b)
+    return system_for(ctx, chapter, character_filter=character_filter), chapter_pack(ctx, chapter) + "\n\n".join(b for b in blocks if b)
 
 
-def write_prompt_for_scene(ctx, chapter_id: str, scene_number: int) -> tuple[str, str]:
+def write_prompt_for_scene(ctx, chapter_id: str, scene_number: int, character_filter=None) -> tuple[str, str]:
     """The write prompt ``write_scene`` would build for this scene. No LLM call."""
     chapter = ctx.chapter(chapter_id)
     if not chapter:
@@ -769,23 +777,29 @@ def write_prompt_for_scene(ctx, chapter_id: str, scene_number: int) -> tuple[str
         path = ctx.scene_path(chapter_id, s["scene_number"], "draft")
         if path.exists():
             texts.append(path.read_text())
-    return build_write(ctx, chapter, {**scene, "beats": beats}, list(beats), "\n\n".join(texts), 800)
+    return build_write(ctx, chapter, {**scene, "beats": beats}, list(beats), "\n\n".join(texts), 800,
+                       character_filter=character_filter)
 
 
 def preview_token_counts(ctx, chapter_id: str, scene_number: int, role: str = "write") -> tuple[int, int, int]:
-    """(prompt that would be sent, with the character filter, without it). No LLM call."""
+    """(prompt that would be sent, with the character filter, without it). No LLM call.
+
+    Each number is that role's real prompt. A write budget that drops ``characters.md``
+    makes the filter on and off the same size, because that call never includes the file.
+    """
     ctx._no_llm = True
     chapter = ctx.chapter(chapter_id)
     if not chapter:
         raise ValueError(f"Chapter {chapter_id} not found")
-    if role == "write":
-        system, user = write_prompt_for_scene(ctx, chapter_id, scene_number)
-    else:
-        system, user = system_for(ctx, chapter), chapter_pack(ctx, chapter)
-    sent = prompt_token_estimate(system + "\n\n" + user)
-    on = prompt_token_estimate(system_for(ctx, chapter, character_filter=True) + "\n\n" + user)
-    off = prompt_token_estimate(system_for(ctx, chapter, character_filter=False) + "\n\n" + user)
-    return sent, on, off
+
+    def estimate(force):
+        if role == "write":
+            system, user = write_prompt_for_scene(ctx, chapter_id, scene_number, character_filter=force)
+        else:
+            system, user = system_for(ctx, chapter, character_filter=force), chapter_pack(ctx, chapter)
+        return prompt_token_estimate(system + "\n\n" + user)
+
+    return estimate(None), estimate(True), estimate(False)
 
 
 def fit_write_context(ctx, system: str, user: str, provider: str | None = None,

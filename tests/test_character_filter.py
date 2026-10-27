@@ -121,6 +121,7 @@ def test_preview_prints_both_character_filter_estimates(project, fake):
     sent, on, off = pack.preview_token_counts(project, "ch01", 1, "write")
     assert (int(lines["prompt_tokens_est"]), int(lines["with_filter"]), int(lines["without_filter"])) == (sent, on, off)
     assert len(fake.calls) == before
+    assert int(lines["prompt_tokens_est"]) == int(lines["with_filter"])
     # write_chapter still drafts; the filter must not be required for that path.
     write_chapter.run(project, "ch01")
 
@@ -131,3 +132,90 @@ def test_honorific_alone_does_not_match_another_entry():
     assert pack._label_hit("Ashby", labels)
     assert not pack._label_hit("Lord Brandt", labels)
     assert not pack._label_in_blob("Lord Ashby", "lord brandt spoke.")
+
+
+PARTIAL = """
+## Bea Two
+A navigator.
+
+## Mara Voss
+Keeps the lamp.
+
+## Eve Fifth
+The point of view who must stay.
+
+## Art
+A painter who is not in this chapter.
+
+## Sam
+A lookout who is not in this chapter.
+
+## Bo
+A child who is not in this chapter.
+"""
+
+
+def test_cast_names_match_whole_words_only(project, fake):
+    _setup(project)
+    raw_path = project.state_dir / "outline.json"
+    import json
+    raw = json.loads(raw_path.read_text())
+    ch = next(c for c in raw if c["id"] == "ch01")
+    ch["summary"] = "The watch begins."
+    ch["scenes"] = [{
+        "scene_number": 1,
+        "pov": "Bea Two",
+        "location": "Harbor",
+        "characters_present": ["Bea Two"],
+        "action": "Bea waits.",
+        "beats": ["Bea starts the same watch about the harbor."],
+    }]
+    from bookforge.core.io import atomic_write_json
+    atomic_write_json(raw_path, raw)
+    (project.project_dir / "style_bible.md").write_text("Plain speech.\n", encoding="utf-8")
+    (project.project_dir / "characters.md").write_text(PARTIAL, encoding="utf-8")
+    plan = project.project_dir / "plan"
+    plan.mkdir(exist_ok=True)
+    (plan / "ch01-plan.txt").write_text("Start the party.\n", encoding="utf-8")
+    notes = project.project_dir / "notes"
+    notes.mkdir(exist_ok=True)
+    (notes / "ch01-notes.md").write_text("Mara Voss brings the lamp.\n", encoding="utf-8")
+    project._style = None
+    config.set_config({
+        "context": {"characters": "chapter_cast", "always_characters": ["Eve Fifth"],
+                    "prior_text": "full"},
+        "plan": {"plan_file": "plan/{chapter_id}-plan.txt",
+                 "notes_files": ["notes/{chapter_id}-notes.md"]},
+        "write": {"require_human_seed": False},
+    })
+    filtered = pack.system_for(project, project.chapter("ch01"))
+    assert _names(filtered) == {"Bea Two", "Mara Voss", "Eve Fifth"}
+
+
+def test_preview_budget_measures_the_write_prompt(project, fake):
+    _setup(project)
+    _cast_chapter(project)
+    config.set_config({
+        "context": {"characters": "chapter_cast", "always_characters": ["Eve Fifth"],
+                    "prior_text": "summaries_plus_prev_plan"},
+        "plan": {"plan_file": "plan/{chapter_id}-plan.txt"},
+        "write": {"require_human_seed": False, "context_budget_tokens": 24000},
+    })
+    before = len(fake.calls)
+    system, user = pack.write_prompt_for_scene(project, "ch01", 1)
+    assert "===== characters.md =====" not in system
+    assert "===== characters.md =====" not in user
+    sent, on, off = pack.preview_token_counts(project, "ch01", 1, "write")
+    real = pack.prompt_token_estimate(system + "\n\n" + user)
+    assert sent == real == on == off
+    glued = pack.prompt_token_estimate(
+        pack.system_for(project, project.chapter("ch01"), character_filter=False) + "\n\n" + user)
+    assert glued > off
+    runner = CliRunner()
+    args = ["pack", "preview", "--project", str(project.project_dir), "--chapter", "ch01",
+            "--scene", "1", "--role", "write"]
+    shown = runner.invoke(cli, args)
+    assert shown.exit_code == 0, shown.output
+    lines = dict(line.split(" ", 1) for line in shown.output.splitlines() if line.strip())
+    assert (int(lines["prompt_tokens_est"]), int(lines["with_filter"]), int(lines["without_filter"])) == (sent, on, off)
+    assert len(fake.calls) == before
