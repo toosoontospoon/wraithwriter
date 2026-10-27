@@ -1,6 +1,6 @@
 # Config reference
 
-Source: `DEFAULT_CONFIG` in `bookforge/config.py`. A user file (`$BOOKFORGE_CONFIG`, or `~/.bookforge/config.yaml`) is deep-merged over this. `bookforge config-init` writes the defaults only when that file is missing.
+Source: `DEFAULT_CONFIG` in `bookforge/config.py`. A user file (`$BOOKFORGE_CONFIG`, or `~/.bookforge/config.yaml`) is deep-merged over this. `bookforge config-init` writes a key-free user template only when that file is missing. The template is `example_config()`, not a verbatim dump of the library defaults: library planner, drafter, and editor stay on `openrouter` + `openai/gpt-6-sol` (drafter reasoning `medium`, headroom 6000) and utility stays on `google/gemini-2.5-flash`. The template points `write` and `rerank` at Gemma and the other generative roles at DeepSeek flash. See the ready-to-copy block below.
 
 Values below are the defaults. One line says what the code does with the key. A key that nothing outside the defaults reads is marked unused.
 
@@ -22,6 +22,9 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 | `providers.ollama.kind` | `openai` | Local OpenAI-compatible server. |
 | `providers.ollama.base_url` | `http://localhost:11434/v1` | Ollama base URL. |
 | `providers.ollama.api_key_env` | empty | No key is read. |
+| `providers.huggingface.kind` | `openai` | OpenAI-compatible chat adapter. Requests go to `{base_url}/chat/completions`. |
+| `providers.huggingface.base_url` | `https://router.huggingface.co/v1` | Hugging Face router. OpenRouter-only cache fields (`usage.include`, `prompt_cache_key`, `session_id`, `prompt_cache_options`) are not sent. |
+| `providers.huggingface.api_key_env` | `HF_TOKEN` | Env var for this provider. `Authorization: Bearer <HF_TOKEN>`. |
 | `models.planner.provider` | `openrouter` | High-intelligence tier. |
 | `models.planner.model` | `openai/gpt-6-sol` | Default planner model. |
 | `models.planner.extra_body` | reasoning effort `medium` | Overridden by `BOOKFORGE_PLANNER_REASONING_EFFORT`. |
@@ -39,6 +42,10 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 | `models.editor.max_tokens_headroom` | `24000` | Added to the editor `max_tokens`. |
 | `models.utility.provider` | `openrouter` | Cheap bookkeeping tier. |
 | `models.utility.model` | `google/gemini-2.5-flash` | Default utility model. No `extra_body`. |
+| `models.gemma.provider` | `huggingface` | Optional prose tier. Library `write` / `rerank` stay on `drafter` until a user config points them here. |
+| `models.gemma.model` | `nbeerbower/Gemma4-Gutenberg-31B-Heretic:featherless-ai` | Id sent on the wire, including the `:featherless-ai` suffix. |
+| `models.gemma.max_tokens_headroom` | `1024` | No reasoning `extra_body`. On this 32k window the write step also skips its +8000 pad, and a larger headroom in the role is clamped to 1024. |
+| `models.gemma.context_tokens` | `32768` | 32k context. A write pack over ~24k tokens is trimmed with `context.total_context_tokens` and `block_caps` (the existing `truncate_tokens` path). |
 | `roles.brainstorm` | provider `xai`, model `grok-4.7` | Direct model. Tier env vars do not apply. |
 | `roles.outline` | tier `planner` | Outline calls. |
 | `roles.worldbuild` | tier `planner` | Worldbuilding role. |
@@ -64,6 +71,7 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 | `prices.openai/gpt-6-sol` | input 2.0, output 10.0, cache_read 0.2, cache_write 2.5 | Estimate when the provider omits cost. |
 | `prices.grok-4.7` | input 2.0, output 6.0 | Estimate when the provider omits cost. |
 | `prices.google/gemini-2.5-flash` | input 0.3, output 2.5, cache_read 0.03, cache_write 0.383 | Estimate when the provider omits cost. |
+| `prices.nbeerbower/Gemma4-Gutenberg-31B-Heretic:featherless-ai` | input 0.48, cache_read 0.10, output 1.44 | USD per 1M. Featherless page, routed through HF with no markup. The router returns `usage` without `cost`, so the log estimates from this row (`cost_source: estimate`) and still records `latency_s`. The price key is the full model id. |
 | `cache.enabled` | `true` | Insert cache breakpoints at `<<<CACHE_BREAK>>>` and on the system prompt. |
 | `cache.key` | empty | Empty becomes `bookforge:` plus the project directory name. |
 | `cache.openai_explicit` | `true` | For `openai/` models, cache only those breakpoints. |
@@ -85,7 +93,7 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 
 | Key | Default | Meaning |
 |---|---|---|
-| `total_context_tokens` | `48000` | Budget for assembled context. Lowest-priority blocks shrink first. |
+| `total_context_tokens` | `48000` | Budget for assembled context. Lowest-priority blocks shrink first. On the 32k Gemma write model this budget is capped at about 24000 tokens so the pack plus the completion fit. |
 | `continuity_chars` | `6000` | Tail of the story-so-far string kept before the token cap. |
 | `block_caps.instructions` | `2000` | Per-block token cap. |
 | `block_caps.continuity` | `2000` | Per-block token cap. |
@@ -212,6 +220,56 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 | `rolling_refine` | `true` | After a chapter, refine the next chapter's cards. |
 | `rerank` | `false` | Second ending plus a judge call on high-tension scenes. |
 | `rerank_min_tension` | `7` | Tension at or above this, on a 10 scale, before rerank runs. |
+
+## Ready-to-copy user block
+
+`bookforge config-init` writes this shape (full file, key-free). Library defaults are unchanged until the file is present. `talkie` stays in the file with `enabled: false`: an opt-in fallback reword, not the default writer. The drafter tier in code is still `openai/gpt-6-sol`.
+
+```yaml
+llm:
+  providers:
+    huggingface:
+      kind: openai
+      base_url: https://router.huggingface.co/v1
+      api_key_env: HF_TOKEN
+  models:
+    gemma:
+      provider: huggingface
+      model: nbeerbower/Gemma4-Gutenberg-31B-Heretic:featherless-ai
+      max_tokens_multiplier: 1.0
+      max_tokens_headroom: 1024
+      context_tokens: 32768
+  roles:
+    write: {tier: gemma}
+    rerank: {tier: gemma}
+    # plan, outline, extract, deconflict, state_update, summary, talkie_fix,
+    # audit, critique, edit, and the other planner/fact/fix/flow roles:
+    plan: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    outline: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    extract: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    deconflict: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    state_update: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    summary: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    talkie_fix: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    audit: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    critique: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+    edit: {provider: openrouter, model: deepseek/deepseek-v4.1-flash-1017}
+  prices:
+    nbeerbower/Gemma4-Gutenberg-31B-Heretic:featherless-ai:
+      input: 0.48
+      cache_read: 0.10
+      output: 1.44
+talkie:
+  enabled: false
+```
+
+Gemma context is 32k tokens. USD per 1M: input 0.48, cached (cache read) 0.10, output 1.44. No reasoning body is sent to that model.
+
+## `talkie`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `enabled` | `false` | Opt-in fallback reword (base-model paraphrase plus a budgeted fact fix). Not the default writer. The pipeline makes no talkie calls until this is true. `bookforge talkie run` is a separate explicit opt-in. |
 
 ## Keys the code applies that are not in `DEFAULT_CONFIG`
 

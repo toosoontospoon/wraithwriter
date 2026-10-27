@@ -77,7 +77,7 @@ There is no separate credit-check command. A missing API key raises `Missing API
 bookforge config-init
 ```
 
-Writes `DEFAULT_CONFIG` as YAML to `$BOOKFORGE_CONFIG` if that variable is set, otherwise to `~/.bookforge/config.yaml`. The write happens only when the file is missing. The command prints `Wrote <path>` either way. Keys stay in the environment. A present file is deep-merged over the defaults at load time.
+Writes the key-free user template (`example_config()` in `bookforge/config.py`) as YAML to `$BOOKFORGE_CONFIG` if that variable is set, otherwise to `~/.bookforge/config.yaml`. The write happens only when the file is missing. The command prints `Wrote <path>` either way. Keys stay in the environment. A present file is deep-merged over the library defaults at load time. Library defaults stay on Sol/Gemini. The template points `write` and `rerank` at Gemma on the Hugging Face router and the other generative roles at `deepseek/deepseek-v4.1-flash-1017`, with `talkie.enabled: false`. See [config.md](config.md).
 
 ## `screen`
 

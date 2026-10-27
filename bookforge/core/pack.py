@@ -310,3 +310,47 @@ def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, 
                   "(names, places, who knows what, objects, injuries, time of day) and fix any slip. "
                   "Output ONLY the prose.")
     return system_for(ctx, chapter), chapter_pack(ctx, chapter) + "\n\n".join(b for b in blocks if b)
+
+
+def fit_write_context(ctx, system: str, user: str, provider: str | None = None,
+                      model: str | None = None) -> tuple[str, str]:
+    """Trim a write pack that would exceed ~24k tokens on the 32k Gemma window.
+
+    No-op for other models. Uses ``total_context_tokens`` (capped at the window's
+    prompt budget) and ``block_caps`` the same way ``BookContext._assemble`` does:
+    ``truncate_tokens`` per block, story pack from the head, continuation from the tail.
+    """
+    from bookforge.config import prompt_budget_for, resolve_role
+    from bookforge.core.context import count_tokens, truncate_tokens
+    if not (provider and model):
+        provider, model = resolve_role("write")
+    budget = prompt_budget_for(provider, model, getattr(ctx, "total_context_tokens", None))
+    if not budget or count_tokens(system) + count_tokens(user) <= budget:
+        return system, user
+    caps = getattr(ctx, "block_caps", None) or {}
+    user_tokens = count_tokens(user)
+    tail_floor = int(caps.get("continuity") or 2000)
+    tail_cap = min(user_tokens, max(tail_floor, budget // 3))
+    sys_cap = min(budget, max(int(caps.get("instructions") or 2000), budget - min(user_tokens, tail_cap)))
+    system = _shrink_to(system, sys_cap, "head", count_tokens, truncate_tokens)
+    remain = max(1, budget - count_tokens(system))
+    user = _shrink_to(user, remain, "tail", count_tokens, truncate_tokens)
+    return system, user
+
+
+def _shrink_to(text: str, cap: int, keep: str, count_tokens, truncate_tokens) -> str:
+    """Call truncate_tokens until the block fits. The char heuristic can undershoot a dense string."""
+    for _ in range(12):
+        if count_tokens(text) <= cap:
+            return text
+        nxt = truncate_tokens(text, max(1, cap), keep)
+        if nxt == text:
+            cap = max(1, int(cap * 0.8))
+            nxt = truncate_tokens(text, cap, keep)
+            if nxt == text:
+                # Still denser than the char estimate. Cut by characters.
+                chars = max(1, cap * 3)
+                text = ("..." + text[-chars:]) if keep == "tail" else (text[:chars] + "...")
+                continue
+        text = nxt
+    return text

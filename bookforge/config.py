@@ -12,6 +12,18 @@ from typing import Any, Dict
 
 import yaml
 
+# Featherless Gemma on the Hugging Face router. 32k context, no reasoning body.
+# USD per 1M from the featherless.ai model page (HF router adds no markup).
+GEMMA_MODEL_ID = "nbeerbower/Gemma4-Gutenberg-31B-Heretic:featherless-ai"
+GEMMA_CONTEXT_TOKENS = 32768
+# Leave completion room on that window. Packs over this are trimmed with the
+# existing context caps (total_context_tokens / block_caps), not a new trimmer.
+GEMMA_PROMPT_BUDGET = 24000
+# Completion pad for this window. The library drafter headroom (6000) and the
+# write step's +8000 pad stay on gpt-6-sol; they must not stack onto 32k.
+GEMMA_MAX_HEADROOM = 1024
+DEEPSEEK_FLASH = "deepseek/deepseek-v4.1-flash-1017"
+
 DEFAULT_CONFIG: Dict[str, Any] = {
     "llm": {
         "providers": {
@@ -21,6 +33,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "anthropic": {"kind": "anthropic", "base_url": "https://api.anthropic.com/v1",
                           "api_key_env": "ANTHROPIC_API_KEY"},
             "ollama": {"kind": "openai", "base_url": "http://localhost:11434/v1", "api_key_env": ""},
+            # OpenAI-compatible router. Chat posts to {base_url}/chat/completions.
+            # OpenRouter-only cache fields are not sent here (see core/llm.py cache_fields).
+            "huggingface": {"kind": "openai", "base_url": "https://router.huggingface.co/v1",
+                            "api_key_env": "HF_TOKEN"},
         },
         # Model tiers. Roles below point at a tier; override per tier with env vars
         # BOOKFORGE_<TIER>_MODEL / BOOKFORGE_<TIER>_PROVIDER (e.g. BOOKFORGE_PLANNER_MODEL).
@@ -51,6 +67,12 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                        "max_tokens_multiplier": 1.0, "max_tokens_headroom": 24000},
             # Cheap bookkeeping: summaries, fact extraction, state updates.
             "utility": {"provider": "openrouter", "model": "google/gemini-2.5-flash"},
+            # Optional prose tier. Library write/rerank stay on drafter (above).
+            # Point those roles at this tier in the user config (see example_config).
+            # context_tokens gates the 32k headroom clamp and the ~24k prompt cap.
+            "gemma": {"provider": "huggingface", "model": GEMMA_MODEL_ID,
+                      "max_tokens_multiplier": 1.0, "max_tokens_headroom": GEMMA_MAX_HEADROOM,
+                      "context_tokens": GEMMA_CONTEXT_TOKENS},
         },
         "roles": {
             # brainstorm stays on xAI: web_search_call uses its model with the xAI responses API.
@@ -83,6 +105,8 @@ DEFAULT_CONFIG: Dict[str, Any] = {
             "openai/gpt-6-sol": {"input": 2.0, "output": 10.0, "cache_read": 0.2, "cache_write": 2.5},  # >=272k prompt: $4/$15
             "grok-4.7": {"input": 2.0, "output": 6.0},  # <200k prompt; >=200k bills $4/$12; web_search +$5/1k calls
             "google/gemini-2.5-flash": {"input": 0.3, "output": 2.5, "cache_read": 0.03, "cache_write": 0.383},
+            # Key is the id sent on the wire, including the :featherless-ai route suffix.
+            GEMMA_MODEL_ID: {"input": 0.48, "output": 1.44, "cache_read": 0.10},
         },
         # Prompt caching (see core/llm.py CACHE_BREAK). openai_explicit: only our breakpoints are cached,
         # so one-off prompts never pay OpenAI's 1.25x cache-write price. key "" = derived from project.
@@ -212,13 +236,97 @@ def set_config(cfg: Dict[str, Any]) -> None:
     _CACHE = _deep_merge(DEFAULT_CONFIG, cfg)
 
 
+def example_config() -> Dict[str, Any]:
+    """Ready-to-copy user config. Library defaults stay on Sol/Gemini; this file does not.
+
+    ``write`` and ``rerank`` use the Gemma tier (Hugging Face router, 32k). Planner, fact,
+    fix and flow roles use OpenRouter ``deepseek/deepseek-v4.1-flash-1017``. Brainstorm stays
+    on xAI (web search). Talkie stays present and disabled: an opt-in fallback reword, not
+    the default writer.
+    """
+    cfg = copy.deepcopy(DEFAULT_CONFIG)
+    flash = {"provider": "openrouter", "model": DEEPSEEK_FLASH}
+    for role in list(cfg["llm"]["roles"]):
+        if role in ("write", "rerank"):
+            cfg["llm"]["roles"][role] = {"tier": "gemma"}
+        elif role != "brainstorm":
+            cfg["llm"]["roles"][role] = dict(flash)
+    cfg["talkie"]["enabled"] = False
+    return cfg
+
+
+_TEMPLATE_HEADER = (
+    "# User config from `bookforge config-init` (written only when this file is missing).\n"
+    "# Deep-merged over library defaults. Those defaults keep planner, drafter, editor on\n"
+    "# openrouter openai/gpt-6-sol (reasoning medium; drafter headroom 6000) and utility on\n"
+    "# google/gemini-2.5-flash. This file points write and rerank at Gemma on the Hugging Face\n"
+    "# router (32k context; USD per 1M input 0.48, cached 0.10, output 1.44; no reasoning body)\n"
+    "# and the other generative roles at openrouter deepseek/deepseek-v4.1-flash-1017.\n"
+    "# talkie.enabled is false: talkie is an opt-in fallback reword, not the default writer.\n"
+    "# Set HF_TOKEN in the environment. No API keys belong in this file.\n"
+)
+
+
 def write_template(path: Path | None = None) -> Path:
-    """Write a key-free template config (explicit `bookforge config init`)."""
+    """Write the key-free user template (explicit `bookforge config init`)."""
     p = path or config_path()
     p.parent.mkdir(parents=True, exist_ok=True)
     if not p.exists():
-        p.write_text(yaml.safe_dump(DEFAULT_CONFIG, sort_keys=False))
+        body = yaml.safe_dump(example_config(), sort_keys=False)
+        p.write_text(_TEMPLATE_HEADER + body)
     return p
+
+
+def declared_context_tokens(provider: str, model: str, config: dict | None = None) -> int | None:
+    """Context window declared for this provider/model, if any."""
+    config = config or load_config()
+    llm = config.get("llm") or {}
+    found = None
+    entries = list((llm.get("models") or {}).values()) + list((llm.get("roles") or {}).values())
+    for entry in entries:
+        if not isinstance(entry, dict) or entry.get("model") != model:
+            continue
+        prov = entry.get("provider")
+        if prov and provider and prov != provider:
+            continue
+        if entry.get("context_tokens"):
+            found = int(entry["context_tokens"])
+    if model == GEMMA_MODEL_ID:
+        return found or GEMMA_CONTEXT_TOKENS
+    return found
+
+
+def tight_context_model(provider: str, model: str, config: dict | None = None) -> bool:
+    """True for the 32k Gemma window (and any model that declares a window that small)."""
+    n = declared_context_tokens(provider, model, config)
+    return n is not None and n <= GEMMA_CONTEXT_TOKENS
+
+
+def adjusted_role_params(role: str, provider: str, model: str, config: dict | None = None) -> dict:
+    """role_params, with reasoning removed and headroom clamped on a 32k model."""
+    config = config or load_config()
+    rp = role_params(role, config)
+    extra = dict(rp["extra_body"] or {})
+    headroom = int(rp["headroom"])
+    if tight_context_model(provider, model, config):
+        extra.pop("reasoning", None)
+        headroom = min(headroom, GEMMA_MAX_HEADROOM)
+    return {"extra_body": extra, "mult": float(rp["mult"]), "headroom": headroom}
+
+
+def prompt_budget_for(provider: str, model: str, total_context_tokens: int | None,
+                      config: dict | None = None) -> int | None:
+    """Token budget for a write pack on a tight window, else None (no extra trim).
+
+    Uses the project's ``total_context_tokens`` when it is lower than the ~24k cap
+    that leaves completion room in a 32k window.
+    """
+    if not tight_context_model(provider, model, config):
+        return None
+    budget = GEMMA_PROMPT_BUDGET
+    if total_context_tokens:
+        budget = min(budget, int(total_context_tokens))
+    return max(1, budget)
 
 
 class RoleNotConfigured(KeyError):

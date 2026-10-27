@@ -11,6 +11,7 @@ from bookforge.core import canon_pipeline, progress
 from bookforge.craft import engine as craft
 from bookforge.core.deai import scrub, scrub_obj
 from bookforge.core.io import stable_hash
+from bookforge.config import resolve_role, tight_context_model
 from bookforge.core.llm import llm_call
 from bookforge.core.schema import _Loose
 from bookforge.steps._common import clean_prose, join_scenes, summarize
@@ -54,6 +55,20 @@ Output ONLY JSON: {{"beats": ["(~280w, dialogue) ..."]}}""", system=pack.system_
     return scrub_obj(beats)
 
 
+def write_max_tokens(words: int, role: str = "write") -> int:
+    """Requested completion tokens before tier headroom.
+
+    The library drafter adds ``int(words * 2.2) + 8000`` and the tier adds 6000 more.
+    A 32k model (Gemma on the HF router) skips that 8000 pad; headroom is clamped in
+    ``adjusted_role_params`` so the call does not ask for 8000+ extra tokens.
+    """
+    base = int(words * 2.2)
+    provider, model = resolve_role(role)
+    if tight_context_model(provider, model):
+        return base
+    return base + 8000
+
+
 def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
     sp = ctx.progress["scenes"].setdefault(chapter["id"], {}).setdefault(str(scene["scene_number"]), {})
     card = _scene_card_hash(chapter, scene)
@@ -74,8 +89,10 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir):
             words = _len.ceiling(sum(_len.beat_words(b) for b in beats))
             system, prompt = pack.build_write(ctx, chapter, sc, beats, (chapter_text_so_far + "\n\n" + text).strip(),
                                               words, i, len(parts))
+            provider, model = resolve_role("write")
+            system, prompt = pack.fit_write_context(ctx, system, prompt, provider, model)
             (step_dir / f"prompt_s{scene['scene_number']:02d}_p{i}.txt").write_text(f"=== SYSTEM ===\n{system}\n\n=== USER ===\n{prompt}")
-            out = llm_call(prompt, system=system, role="write", temperature=0.8, max_tokens=int(words * 2.2) + 8000)
+            out = llm_call(prompt, system=system, role="write", temperature=0.8, max_tokens=write_max_tokens(words))
             if i == len(parts):
                 out = craft_rerank(ctx, chapter, scene, prompt, system, out, words, step_dir)
             text += ("\n\n" if text else "") + scrub(clean_prose(out))

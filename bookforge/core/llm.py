@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional, Type
 import requests
 from pydantic import BaseModel, ValidationError
 
-from bookforge.config import api_key, load_config, resolve_role, role_params
+from bookforge.config import adjusted_role_params, api_key, load_config, resolve_role
 
 AUTH_SCHEME = "Bearer"  # HTTP auth scheme; the key itself always comes from the environment
 
@@ -154,11 +154,18 @@ def build_messages(system: str, prompt: str, model: str, cache: dict) -> list[di
     return msgs
 
 
+def _openrouter(pcfg: dict) -> bool:
+    return "openrouter" in (pcfg.get("base_url") or "")
+
+
 def cache_fields(model: str, cache: dict, pcfg: dict) -> dict:
+    """OpenRouter-only cache routing. Other OpenAI-compatible routers (Hugging Face) get none of these."""
     out = {}
-    if "openrouter" in (pcfg.get("base_url") or ""):
+    if _openrouter(pcfg):
         out["usage"] = {"include": True}          # OpenRouter returns real cost incl. cache discounts
     if not cache.get("enabled"):
+        return out
+    if not _openrouter(pcfg):
         return out
     if cache.get("key"):
         out["prompt_cache_key"] = cache["key"]    # OpenAI cache routing; OpenRouter also uses it as session
@@ -248,7 +255,8 @@ def estimate_cost(model, usage, config) -> float:
     """Cost from config prices, cache-aware (used when the provider doesn't return a cost)."""
     price = config["llm"].get("prices", {}).get(model, {})
     pin, pout = float(price.get("input", 0)), float(price.get("output", 0))
-    pread = float(price.get("cache_read", pin))
+    # `cached` is accepted as an alias of `cache_read` (the featherless page says "cached").
+    pread = float(price.get("cache_read", price.get("cached", pin)))
     pwrite = float(price.get("cache_write", pin))
     pt = int(usage.get("prompt_tokens", 0) or 0)
     ct = int(usage.get("completion_tokens", 0) or 0)
@@ -293,7 +301,7 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
     if not (provider and model):
         provider, model = resolve_role(role, config)
     prov = get_provider(provider, config)
-    rp = role_params(role, config)
+    rp = adjusted_role_params(role, provider, model, config)
     prov.extra_body = rp["extra_body"]
     prov.cache = cache_settings(config)
     max_tokens = int(max_tokens * rp["mult"]) + rp["headroom"]
