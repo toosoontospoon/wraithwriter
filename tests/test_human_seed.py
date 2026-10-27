@@ -69,7 +69,9 @@ def _clear_draft(project, chapter_id="ch01"):
 def test_front_matter_and_end_whitespace_only():
     body = strip_front_matter(FRONT + BODY + "\n\n")
     assert body == BODY + "\n\n"
-    assert seed_body(FRONT + BODY + "\n\n") == BODY
+    # One trailing end-of-line only. An earlier newline stays.
+    assert seed_body(FRONT + BODY + "\n") == BODY
+    assert seed_body(FRONT + BODY + "\n\n") == BODY + "\n"
     assert "author: human" not in seed_body(FRONT + BODY)
     # Unclosed front matter is left alone.
     assert strip_front_matter("---\nchapter: 1\nno closer\n") .startswith("---\n")
@@ -168,6 +170,53 @@ def test_tty_paste_saves_chapter_seed_and_drafts(project, fake, monkeypatch):
     scene = project.scene_path("ch01", 1, "draft").read_text(encoding="utf-8")
     assert scene.startswith(opening)
     assert "After the paste." in scene
+
+
+def test_open_quote_joins_directly_and_seed_skips_cleaners(project, fake, monkeypatch):
+    from bookforge.core import deai, protect, rules_check
+    from bookforge.core.human_seed import ends_inside_open_quote, join_opening
+    _setup(project)
+    _enable()
+    # Body ends with a newline and an unmatched opening quote. An earlier line keeps its trailing space.
+    body = "She waited. \n\""
+    assert body.endswith("\n\"") and ends_inside_open_quote(body)
+    _plant(project, "ch01", FRONT + body + "\n")
+    assert seed_body(FRONT + body + "\n") == body
+    seen = []
+
+    def watch(name, fn):
+        def wrapped(*args, **kwargs):
+            seen.append((name, args))
+            return fn(*args, **kwargs)
+        return wrapped
+
+    monkeypatch.setattr(write_chapter, "scrub", watch("scrub", write_chapter.scrub))
+    monkeypatch.setattr(write_chapter, "clean_prose", watch("clean", write_chapter.clean_prose))
+    monkeypatch.setattr(deai, "scrub", watch("deai.scrub", deai.scrub))
+    monkeypatch.setattr(rules_check, "enforce_first_line", watch("enforce", rules_check.enforce_first_line))
+    monkeypatch.setattr(protect, "restore", watch("protect", protect.restore))
+    fake.hooks["write"] = lambda p, s: "still inside"
+    write_chapter.run(project, "ch01")
+    scene = project.scene_path("ch01", 1, "draft").read_text(encoding="utf-8")
+    chapter = project.chapter_path("ch01", "draft").read_text(encoding="utf-8")
+    assert scene.startswith(body) and chapter.startswith(body)
+    assert scene[len(body):].startswith("still inside")
+    assert chapter[len(body):].startswith("still inside")
+    assert " " not in scene[len(body):len(body) + 1]
+    prompt = next(p for r, p, _s in fake.calls if r == "write" and "of scene 1 of chapter ch01" in p)
+    assert "continuing inside that spoken line" in prompt
+    for _name, args in seen:
+        for arg in args:
+            assert not (isinstance(arg, str) and body in arg)
+
+    # A closed opening uses the paragraph separator on the real write step.
+    _clear_draft(project)
+    (project.manuscript_dir / "ch01" / "human_seed.md").write_text("She stopped.\n", encoding="utf-8")
+    fake.hooks["write"] = lambda p, s: "Next sentence."
+    write_chapter.run(project, "ch01")
+    closed_scene = project.scene_path("ch01", 1, "draft").read_text(encoding="utf-8")
+    assert closed_scene.startswith("She stopped.\n\nNext sentence.")
+    assert join_opening("She stopped.", "Next.") == "She stopped.\n\nNext."
 
 
 def test_library_seed_default_is_required():

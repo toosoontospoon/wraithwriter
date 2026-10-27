@@ -4,20 +4,16 @@ A seed file is plain UTF-8 markdown. An optional YAML front matter block is the
 only thing removed. The body is not normalized: no quote, dash, whitespace, or
 unicode changes, and no scrub, clean_prose, or enforce_first_line.
 
-Join: trailing whitespace at the very end of the body (the suffix of spaces,
-tabs, and newlines after the last non-whitespace character) is omitted where
-the continuation is appended. It is not rewritten and it is not inserted
-elsewhere. Every earlier byte, including trailing spaces on a line that is not
-the end of the body, stays in the opening prefix. The continuation is appended
-immediately after that prefix, with no extra separator.
+The locked body is that text minus exactly one trailing end-of-line when the
+file has one. No other character is dropped. If the body's last non-space
+character is an unmatched opening quote (``"`` or U+201C), the continuation is
+appended with nothing between them. Otherwise it is joined with the paragraph
+separator ``\\n\\n``.
 """
 from __future__ import annotations
 
 import sys
 from pathlib import Path
-
-_END_WS = " \t\r\n"
-
 
 class HumanSeedError(RuntimeError):
     """Drafting refused because the chapter has no usable human opening."""
@@ -45,22 +41,70 @@ def strip_front_matter(text: str) -> str:
     return text
 
 
-def opening_prefix(body: str) -> str:
-    """Body minus only the trailing whitespace run at the very end.
-
-    ``opening_prefix(body) + end_ws == body`` for that run. Mid-line trailing
-    spaces stay. This prefix is what the scene draft and the chapter draft
-    must start with, byte for byte.
-    """
-    i = len(body)
-    while i > 0 and body[i - 1] in _END_WS:
-        i -= 1
-    return body[:i]
-
-
 def seed_body(text: str) -> str:
-    """Locked opening: front matter removed, then end-of-body whitespace separated."""
-    return opening_prefix(strip_front_matter(text))
+    """Front matter removed, then exactly one trailing end-of-line if the file has one.
+
+    A final ``\\r\\n`` counts as one end-of-line. A second trailing newline stays.
+    Spaces before that end-of-line stay, including trailing spaces on earlier lines.
+    """
+    body = strip_front_matter(text)
+    if body.endswith("\r\n"):
+        return body[:-2]
+    if body.endswith("\n") or body.endswith("\r"):
+        return body[:-1]
+    return body
+
+
+def ends_inside_open_quote(body: str) -> bool:
+    """True when the last non-space character is an unmatched ``"`` or U+201C.
+
+    Spaces and tabs before the end do not count. Straight quotes toggle. U+201C
+    opens and U+201D closes. A quote that is still open at that character means
+    the continuation continues inside the spoken line.
+    """
+    i = len(body) - 1
+    while i >= 0 and body[i] in " \t":
+        i -= 1
+    if i < 0 or body[i] not in ('"', "\u201c"):
+        return False
+    straight = False
+    curly = 0
+    for ch in body:
+        if ch == "\u201c":
+            curly += 1
+        elif ch == "\u201d":
+            curly = max(0, curly - 1)
+        elif ch == '"':
+            straight = not straight
+    if body[i] == "\u201c":
+        return curly > 0
+    return straight
+
+
+def join_opening(opening: str, continuation: str) -> str:
+    """Append a continuation after a seed body.
+
+    Inside an unmatched opening quote, nothing is inserted. Otherwise the
+    paragraph separator used between prose chunks (``\\n\\n``) is inserted.
+    """
+    if not opening:
+        return continuation
+    if ends_inside_open_quote(opening):
+        return opening + continuation
+    if not continuation:
+        return opening
+    return opening + "\n\n" + continuation
+
+
+def continuation_note(opening: str) -> str:
+    """Prompt text that quotes the seed and, when needed, the open spoken line."""
+    if ends_inside_open_quote(opening):
+        return ("ALREADY WRITTEN (verbatim; continue directly after this; "
+                "do not repeat or rewrite it). You are continuing inside that spoken line; "
+                "the next character follows the opening quote with no inserted whitespace:\n"
+                + opening)
+    return ("ALREADY WRITTEN (verbatim; continue directly after this; "
+            "do not repeat or rewrite it):\n" + opening)
 
 
 def chapter_seed_path(ctx, chapter_id: str) -> Path:
@@ -174,23 +218,6 @@ def ensure_chapter_seed(ctx, chapter, stdin=None) -> None:
     raise HumanSeedError(
         f"Refusing to draft {chapter['id']}: no human seed. {_format_note(path)}"
     )
-
-
-def restore_opening(text: str, opening: str) -> str:
-    """Put ``opening`` back at the start if a later pass rewrote it.
-
-    When fiction scrub rewrote the same span, the tail after the scrubbed
-    opening is kept. Otherwise the previous text's tail (already the
-    continuation) is kept. ``protect.py`` is not used: exact lines are off
-    by default and ``norm()`` folds the punctuation a seed must keep.
-    """
-    if not opening or text.startswith(opening):
-        return text
-    from bookforge.core.deai import scrub
-    folded = scrub(opening)
-    if folded and text.startswith(folded):
-        return opening + text[len(folded):]
-    return text
 
 
 def raw_family(model: str) -> str:

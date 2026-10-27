@@ -71,32 +71,23 @@ def write_max_tokens(words: int, role: str = "write") -> int:
 
 
 def _append_continuation(text: str, opening: str, continuation: str, first_chunk: bool) -> str:
-    """Append a scrubbed continuation. The first chunk of a seeded scene continues after the opening."""
+    """Append a continuation. Cleaners have already run on ``continuation`` only."""
+    from bookforge.core.human_seed import join_opening
     if first_chunk and opening and not text:
-        return opening + continuation
+        return join_opening(opening, continuation)
     return text + (("\n\n" if text else "") + continuation)
 
 
 def _raw_scene(opening: str, chunks: list[str]) -> str:
     """Seed prefix plus raw model continuations, joined the same way as the draft."""
+    from bookforge.core.human_seed import join_opening
     text = ""
     for i, chunk in enumerate(chunks):
         if opening and i == 0:
-            text = opening + chunk
+            text = join_opening(opening, chunk)
         else:
             text += ("\n\n" if text else "") + chunk
     return text
-
-
-def _keep_opening(text: str, opening: str) -> str:
-    """Scrub and craft may rewrite the continuation only. Put the seed back if they touched it."""
-    from bookforge.core.human_seed import restore_opening
-    if not opening:
-        return scrub(text)
-    restored = restore_opening(text, opening)
-    if not restored.startswith(opening):
-        restored = opening + restored
-    return opening + scrub(restored[len(opening):])
 
 
 def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=None):
@@ -126,19 +117,19 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
             provider, model = resolve_role("write")
             system, prompt = pack.fit_write_context(ctx, system, prompt, provider, model)
             if opening and i == 1:
-                prompt += ("\n\nALREADY WRITTEN (verbatim; continue directly after this; "
-                           "do not repeat or rewrite it):\n" + opening)
+                from bookforge.core.human_seed import continuation_note
+                prompt += "\n\n" + continuation_note(opening)
             (step_dir / f"prompt_s{scene['scene_number']:02d}_p{i}.txt").write_text(f"=== SYSTEM ===\n{system}\n\n=== USER ===\n{prompt}")
             out = llm_call(prompt, system=system, role="write", temperature=0.8, max_tokens=write_max_tokens(words))
             if i == len(parts):
                 out = craft_rerank(ctx, chapter, scene, prompt, system, out, words, step_dir)
             raw_chunks.append(out)
-            text = _append_continuation(text, opening, scrub(clean_prose(out)), i == 1)
-        if scene.get("scene_number") == (chapter.get("scenes") or [{}])[0].get("scene_number"):
-            from bookforge.core.rules_check import enforce_first_line
-            text = enforce_first_line(chapter, text)
-            if opening:
-                text = _keep_opening(text, opening)
+            # Scrub and clean the continuation only. The seed is already in ``opening``.
+            piece = scrub(clean_prose(out))
+            if not opening and scene.get("scene_number") == (chapter.get("scenes") or [{}])[0].get("scene_number") and i == 1:
+                from bookforge.core.rules_check import enforce_first_line
+                piece = enforce_first_line(chapter, piece)
+            text = _append_continuation(text, opening, piece, i == 1)
         ctx.write_text(path, text)
         fresh_raw = _raw_scene(opening, raw_chunks)
         sp["written"] = True
@@ -160,12 +151,15 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
                        "review": len(rep["review"]), "amendments": len(rep["amendments"])}
         ctx.save_progress()
     if not sp.get("craft"):
-        rep = craft.process_scene(ctx, chapter["id"], scene, text, step_dir)
-        if rep["text"] != text:  # verbatim autofixes (e.g. prophecy wording)
-            text = _keep_opening(rep["text"], opening) if opening else scrub(rep["text"])
-            ctx.write_text(path, text)
-        elif opening and not text.startswith(opening):
-            text = _keep_opening(text, opening)
+        # Craft scrubs its argument. Give it the continuation so the seed is not an argument.
+        craft_src = text[len(opening):] if opening and text.startswith(opening) else text
+        rep = craft.process_scene(ctx, chapter["id"], scene, craft_src, step_dir)
+        if opening and text.startswith(opening):
+            if rep["text"] != craft_src:
+                text = opening + rep["text"]
+                ctx.write_text(path, text)
+        elif rep["text"] != text:  # verbatim autofixes (e.g. prophecy wording)
+            text = scrub(rep["text"])
             ctx.write_text(path, text)
         sp["craft"] = {"events": rep["events"], "issues": len(rep["issues"])}
         ctx.save_progress()
