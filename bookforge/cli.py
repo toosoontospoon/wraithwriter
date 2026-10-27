@@ -332,15 +332,12 @@ def pack_preview(project, chapter, scene, role):
     """Print estimated prompt tokens for one call. Does not call an LLM."""
     from bookforge.core import pack as story_pack
     ctx = _ctx(project)
-    if role == "write":
-        system, user = story_pack.write_prompt_for_scene(ctx, chapter, scene)
-    else:
-        ch = ctx.chapter(chapter)
-        if not ch:
-            raise click.ClickException(f"Chapter {chapter} not found")
-        system, user = story_pack.system_for(ctx, ch), story_pack.chapter_pack(ctx, ch)
-    est = story_pack.prompt_token_estimate(system + "\n\n" + user)
-    click.echo(f"prompt_tokens_est {est}")
+    if not ctx.chapter(chapter):
+        raise click.ClickException(f"Chapter {chapter} not found")
+    sent, on, off = story_pack.preview_token_counts(ctx, chapter, scene, role)
+    click.echo(f"prompt_tokens_est {sent}")
+    click.echo(f"with_filter {on}")
+    click.echo(f"without_filter {off}")
 
 
 from bookforge.craft.cli_cmds import craft_group  # noqa: E402

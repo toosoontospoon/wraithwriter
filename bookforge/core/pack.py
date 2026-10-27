@@ -131,7 +131,77 @@ def _world_relevant(text: str, chapter: dict, budget: int) -> str:
     return truncate_tokens("\n".join(out), budget)
 
 
-def stable_pack(ctx, chapter: dict) -> str:
+def character_filter_enabled(force=None) -> bool:
+    """Limit ``characters.md`` to the chapter cast. The prior-text mode turns this on."""
+    if force is not None:
+        return bool(force)
+    ctx_cfg = load_config().get("context") or {}
+    if str(ctx_cfg.get("characters") or "") == "chapter_cast":
+        return True
+    return prior_text_mode() == "summaries_plus_prev_plan"
+
+
+def _entry_labels(title: str, body: str) -> list[str]:
+    labels = [title] if title else []
+    for line in body.splitlines():
+        m = re.match(r"(?i)\s*aliases?\s*:\s*(.+)$", line)
+        if m:
+            labels.extend(x.strip() for x in re.split(r"[,;]", m.group(1)) if x.strip())
+    return labels
+
+
+def _label_hit(wanted: str, labels: list[str]) -> bool:
+    w = (wanted or "").lower().strip()
+    if not w:
+        return False
+    wfirst = w.split()[0]
+    for lab in labels:
+        low = lab.lower().strip()
+        if not low:
+            continue
+        if w == low or wfirst == low or w == low.split()[0] or wfirst == low.split()[0]:
+            return True
+    return False
+
+
+def _label_in_blob(label: str, blob: str) -> bool:
+    low = label.lower().strip()
+    if not low:
+        return False
+    if low in blob:
+        return True
+    first = low.split()[0]
+    return re.search(rf"(?<![a-z0-9]){re.escape(first)}(?![a-z0-9])", blob) is not None
+
+
+def filter_characters_markdown(ctx, chapter: dict, text: str) -> str:
+    """Keep entries for this chapter's cast. Headings, aliases, and first names all count."""
+    parts = re.split(r"(?m)^(#{1,3} .+)$", text)
+    if len(parts) < 3:
+        return text
+    wanted = []
+    for scene in chapter.get("scenes") or []:
+        if scene.get("pov"):
+            wanted.append(scene["pov"])
+        wanted.extend(scene.get("characters_present") or [])
+    for name in (load_config().get("context") or {}).get("always_characters") or []:
+        wanted.append(name)
+    plan_text, notes_text, _digest = chapter_plan_sources(ctx, chapter.get("id", ""))
+    blob = (plan_text + "\n" + notes_text + "\n" + outline_plan_card(chapter)).lower()
+    kept = []
+    for i in range(1, len(parts), 2):
+        heading = parts[i]
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        title = re.sub(r"^#+\s*", "", heading).strip()
+        labels = _entry_labels(title, body)
+        if any(_label_hit(w, labels) for w in wanted) or any(_label_in_blob(lab, blob) for lab in labels):
+            kept.append((heading + body).strip())
+    preamble = parts[0].strip()
+    body_out = "\n\n".join(kept)
+    return (preamble + "\n\n" + body_out).strip() if preamble else body_out
+
+
+def stable_pack(ctx, chapter: dict, character_filter=None) -> str:
     c = cfg()
     d = bible_dir(ctx)
     if not c["enabled"] or not d:
@@ -140,7 +210,11 @@ def stable_pack(ctx, chapter: dict) -> str:
     for name in c["files"]:
         p = d / name
         if p.exists():
-            blocks.append(f"===== {name} =====\n{p.read_text().strip()}")
+            text = p.read_text().strip()
+            if (name == "characters.md" and chapter.get("id")
+                    and character_filter_enabled(character_filter)):
+                text = filter_characters_markdown(ctx, chapter, text).strip()
+            blocks.append(f"===== {name} =====\n{text}")
     bs = _beat_sheet(d, c)
     if bs:
         blocks.append(f"===== {bs.name} (beat sheet; the plan for later chapters may change) =====\n{bs.read_text().strip()}")
@@ -316,12 +390,15 @@ PERSONA = ("You are the author and editorial team of an novel described in the s
            "pack as the source of truth.")
 
 
-def system_for(ctx, chapter: dict | None = None) -> str:
-    """ONE system prompt for every call type and every chapter (byte-identical, so it caches book-wide):
-    persona, rule card, prose rules, the human bible files, confirmed facts.
-    Nothing chapter- or call-specific. The prose-rules block is a constant when the flag is on."""
+def system_for(ctx, chapter: dict | None = None, character_filter=None) -> str:
+    """Persona, rule card, prose rules, the human bible files, confirmed facts.
+
+    With the character filter off this is byte-identical for every chapter. The filter,
+    when ``context.characters`` is ``chapter_cast`` or ``context.prior_text`` is
+    ``summaries_plus_prev_plan``, keeps only this chapter's cast from ``characters.md``.
+    """
     from bookforge.core.deai import prose_rules_block
-    sp = stable_pack(ctx, chapter or {})
+    sp = stable_pack(ctx, chapter or {}, character_filter=character_filter)
     cc = confirmed_canon(ctx)
     return "\n\n".join(x for x in (PERSONA, RULE_CARD, prose_rules_block(), sp, cc) if x)
 
@@ -657,6 +734,21 @@ def write_prompt_for_scene(ctx, chapter_id: str, scene_number: int) -> tuple[str
         if path.exists():
             texts.append(path.read_text())
     return build_write(ctx, chapter, {**scene, "beats": beats}, list(beats), "\n\n".join(texts), 800)
+
+
+def preview_token_counts(ctx, chapter_id: str, scene_number: int, role: str = "write") -> tuple[int, int, int]:
+    """(prompt that would be sent, with the character filter, without it). No LLM call."""
+    chapter = ctx.chapter(chapter_id)
+    if not chapter:
+        raise ValueError(f"Chapter {chapter_id} not found")
+    if role == "write":
+        system, user = write_prompt_for_scene(ctx, chapter_id, scene_number)
+    else:
+        system, user = system_for(ctx, chapter), chapter_pack(ctx, chapter)
+    sent = prompt_token_estimate(system + "\n\n" + user)
+    on = prompt_token_estimate(system_for(ctx, chapter, character_filter=True) + "\n\n" + user)
+    off = prompt_token_estimate(system_for(ctx, chapter, character_filter=False) + "\n\n" + user)
+    return sent, on, off
 
 
 def fit_write_context(ctx, system: str, user: str, provider: str | None = None,

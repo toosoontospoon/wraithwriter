@@ -72,7 +72,10 @@ def test_example_gemma_write_sets_budget_and_beats():
     assert cfg["write"]["beats_per_call"] == 1
     assert cfg["talkie"]["enabled"] is False
     assert cfg["context"]["prior_text"] == "summaries_plus_prev_plan"
+    assert cfg["context"]["always_characters"] == ["Eve Fifth"]
     assert C.DEFAULT_CONFIG["context"]["prior_text"] == "full"
+    assert C.DEFAULT_CONFIG["context"]["always_characters"] == []
+    assert C.DEFAULT_CONFIG["context"]["characters"] is None
     assert C.DEFAULT_CONFIG["write"]["context_budget_tokens"] is None
     assert C.DEFAULT_CONFIG["write"]["beat_by_beat"] is False
     assert C.DEFAULT_CONFIG["llm"]["roles"]["plan"]["tier"] == "planner"

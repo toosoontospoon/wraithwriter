@@ -120,8 +120,10 @@ def test_pack_preview_prints_the_write_estimate_without_an_llm(project, fake):
     assert first.exit_code == 0, first.output
     assert second.exit_code == 0, second.output
     assert first.output == second.output
-    assert first.output.startswith("prompt_tokens_est ")
-    count = int(first.output.strip().split()[-1])
+    line = first.output.splitlines()[0]
+    assert line.startswith("prompt_tokens_est ")
+    assert "with_filter " in first.output and "without_filter " in first.output
+    count = int(line.split()[-1])
     assert count > 0
     system, user = pack.write_prompt_for_scene(project, "ch03", 1)
     assert count == pack.prompt_token_estimate(system + "\n\n" + user)

@@ -131,6 +131,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # full: recent chapter text, as recent_pack does today. summaries_plus_prev_plan
         # replaces that text with summaries, the previous chapter's plan, and this chapter's plan.
         "prior_text": "full",
+        # chapter_cast limits characters.md to this chapter. summaries_plus_prev_plan turns that on.
+        # None keeps the whole file. always_characters are never dropped (scene POVs are kept too).
+        "characters": None,
+        "always_characters": [],
     },
     "brainstorm": {"web_research": True},
     "canon": {
@@ -270,6 +274,7 @@ def example_config() -> Dict[str, Any]:
     cfg["write"]["beat_by_beat"] = True
     cfg["write"]["beats_per_call"] = 1
     cfg["context"]["prior_text"] = "summaries_plus_prev_plan"
+    cfg["context"]["always_characters"] = ["Eve Fifth"]
     return cfg
 
 
