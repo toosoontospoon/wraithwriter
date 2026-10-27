@@ -569,6 +569,142 @@ def _append(path: Path, row: dict) -> None:
         f.flush()
 
 
+def _new_failure(before: dict, after: dict, threshold: float) -> bool:
+    """True when invented, contradiction or name newly crosses the threshold."""
+    for key in ("invented", "contradiction", "name"):
+        if after.get(key, 1.0) > threshold >= float(before.get(key, 0.0)):
+            return True
+    return False
+
+
+def load_targeted(path: Path) -> dict[int, dict]:
+    found = {}
+    if not path.exists():
+        return found
+    for line in path.read_text().splitlines():
+        if not line.strip():
+            continue
+        try:
+            row = json.loads(line)
+        except json.JSONDecodeError:
+            continue
+        if row.get("phase") == "targeted" and isinstance(row.get("i"), int):
+            found[row["i"]] = row
+    return found
+
+
+def _fact_splice(talk, src, dropped, context, allow, vocab, cfg, log_dir, index):
+    """Steps d-e: retell each dropped source sentence and drop splice duplicates."""
+    ss = split_sentences(src)
+    stock = {}
+    wall = 0.0
+    for m in dropped:
+        if m < 0 or m >= len(ss):
+            continue
+        stock[m] = []
+        sent_prompt = context + SENT_DEMO + "Pupil: " + ss[m] + "\nMaster:"
+        for s in range(int(cfg["splice_seeds"])):
+            gen = talkie.generate(sent_prompt, ss[m], 8000 + 100 * index + 10 * m + s,
+                                  cfg=cfg, log_dir=log_dir)
+            stock[m].append(gen)
+            wall += float(gen["wall"])
+    _text, used, sents, splice_idx = splice(
+        talk, src, dropped, stock, allow, vocab, float(cfg["splice_copy_max"]))
+    sents, _gone = dedupe_splices(sents, splice_idx, float(cfg["dedupe_jaccard"]))
+    return " ".join(sents), used, sents, wall
+
+
+def targeted_pass(paragraphs, finals, rows, cfg, persons, opening, log_dir, fewshot):
+    """One more splice and a wider Sol budget, only where facts are still missing.
+
+    The new paragraph replaces the old one only when Jev's dropped score falls and
+    invented, contradiction and name do not newly fail.
+    """
+    tcfg = cfg.get("targeted") or {}
+    if not tcfg.get("enabled", True):
+        return finals
+    path = Path(log_dir) / LOG_NAME
+    done = load_targeted(path)
+    frac = float(tcfg.get("edit_budget", 0.25))
+    rounds = max(1, int(tcfg.get("rounds", 1)))
+    threshold = float(cfg["jev_threshold"])
+    cap = float(cfg["cap_usd"])
+    for row in rows:
+        i = row["i"]
+        if i in done:
+            rec = done[i]
+            row["targeted"] = _targeted_view(rec)
+            if rec.get("kept") and rec.get("final"):
+                finals[i] = rec["final"]
+            continue
+        if row.get("skipped") == "marker" or not row.get("dropped_idxs"):
+            continue
+        src = paragraphs[i]
+        prose_src = [p for p in paragraphs[:i] if not is_marker(p)]
+        prose_fixed = [p for p in finals[:i] if not is_marker(p)]
+        allow = allowlist(opening or "", persons, src, *prose_src, *prose_fixed)
+        vocab = set()
+        for text in (opening or "", src, *prose_src, *prose_fixed):
+            vocab.update(toks(text))
+        context = build_context(prose_src, prose_fixed, persons, opening, fewshot,
+                                int(cfg["history_window"]), i)
+        before = prose_src[-1] if prose_src else (opening or "")
+        original = finals[i]
+        cur = original
+        scores = dict(row.get("jev_after") or {})
+        attempts = []
+        sol_usd = 0.0
+        wall = 0.0
+        budget = 0
+        for rnd in range(rounds):
+            _rs, ss, _err, miss = jev_localise(src, cur, f"talkie:{i}:targeted-loc:{rnd}", log_dir, cap)
+            dropped = [m for m, p in enumerate(miss) if p > threshold] or list(row.get("dropped_idxs") or [])
+            spliced, used, sents, splice_wall = _fact_splice(
+                cur, src, dropped, context, allow, vocab, cfg, log_dir, i)
+            wall += splice_wall
+            budget = max(3, int(frac * max(1, words(spliced))))
+            rs2, ss2, err2, miss2 = jev_localise(src, spliced, f"talkie:{i}:targeted-loc2:{rnd}", log_dir, cap)
+            flagged = [n for n, p in enumerate(err2) if p > threshold]
+            still = [ss2[m] for m, p in enumerate(miss2) if p > threshold and m < len(ss2)]
+            edited, sol = sol_fix(src, rs2 or sents, flagged, still, prose_fixed, opening, budget,
+                                  int(cfg["sol_tries"]), float(cfg["dedupe_jaccard"]))
+            sol_usd += float(sol.get("sol_usd") or 0)
+            after = jev_para(src, before, [edited], f"talkie:{i}:targeted:{rnd}", log_dir, cap)[0]
+            keep = after.get("dropped", 1.0) < scores.get("dropped", 1.0) and not _new_failure(scores, after, threshold)
+            attempts.append({
+                "round": rnd, "budget": budget, "splices": used, "sol_words": sol["sol_words"],
+                "sol_edits": sol["sol_edits"], "sol_deletions": sol["sol_deletions"],
+                "sol_skipped": sol["sol_skipped"], "jev_before": scores, "jev_after": after, "kept": keep,
+            })
+            if not keep:
+                break
+            cur = edited
+            scores = after
+            _rs3, _ss3, _e3, miss3 = jev_localise(src, cur, f"talkie:{i}:targeted-after:{rnd}", log_dir, cap)
+            if not any(p > threshold for p in miss3):
+                break
+        kept = cur != original
+        finals[i] = cur
+        rec = {
+            "phase": "targeted", "i": i, "budget": budget, "jev_before": row.get("jev_after") or {},
+            "jev_after": attempts[-1]["jev_after"] if attempts else {}, "kept": kept, "final": cur,
+            "attempts": attempts, "sol_usd": round(sol_usd, 6), "talkie_wall": round(wall, 3),
+        }
+        _append(path, rec)
+        row["targeted"] = _targeted_view(rec)
+        row["final"] = cur
+    return finals
+
+
+def _targeted_view(rec: dict) -> dict:
+    return {
+        "kept": bool(rec.get("kept")), "budget": rec.get("budget"),
+        "jev_before": rec.get("jev_before") or {}, "jev_after": rec.get("jev_after") or {},
+        "sol_usd": rec.get("sol_usd") or 0.0, "talkie_wall": rec.get("talkie_wall") or 0.0,
+        "attempts": rec.get("attempts") or [],
+    }
+
+
 def load_rows(path: Path) -> list[dict]:
     """Contiguous paragraph rows 0..k already on disk. Targeted lines are not paragraphs."""
     if not path.exists():
@@ -726,6 +862,13 @@ def run_chapter(paragraphs, cfg, persons, opening, log_dir):
     rows = load_rows(path)
     finals = [r["final"] for r in rows]
     fewshot = fewshot_text(cfg)
+    for rec in load_targeted(path).values():
+        i = rec["i"]
+        if 0 <= i < len(rows):
+            rows[i]["targeted"] = _targeted_view(rec)
+            if rec.get("kept") and rec.get("final"):
+                finals[i] = rec["final"]
+                rows[i]["final"] = rec["final"]
     for i in range(len(rows), len(paragraphs)):
         if is_marker(paragraphs[i]):
             row = _marker_row(i, paragraphs[i])
@@ -737,8 +880,10 @@ def run_chapter(paragraphs, cfg, persons, opening, log_dir):
         _append(path, row)
         rows.append(row)
         finals.append(final)
+    targeted_pass(paragraphs, finals, rows, cfg, persons, opening, log_dir, fewshot)
     jev_usd = jev.spent(log_dir)
-    sol_usd = sum(float(r.get("sol_usd") or 0) for r in rows)
+    sol_usd = sum(float(r.get("sol_usd") or 0) for r in rows) + sum(
+        float((r.get("targeted") or {}).get("sol_usd") or 0) for r in rows)
     summary = summarize(rows, jev_sol_usd=jev_usd + sol_usd)
     (log_dir / SUMMARY_NAME).write_text(json.dumps(summary, indent=2))
     return finals, summary
@@ -748,7 +893,8 @@ def summarize(rows, jev_sol_usd=0.0, talkie_seconds=None) -> dict:
     prose = [r for r in rows if r.get("skipped") != "marker" and r.get("phase") != "targeted"]
     word_count = sum(words(r.get("final") or "") for r in prose)
     if talkie_seconds is None:
-        talkie_seconds = sum(float(r.get("talkie_wall") or 0) for r in prose)
+        talkie_seconds = sum(float(r.get("talkie_wall") or 0) for r in prose) + sum(
+            float((r.get("targeted") or {}).get("talkie_wall") or 0) for r in prose)
 
     def avg(key):
         vals = [r[key] for r in prose if isinstance(r.get(key), (int, float))]
