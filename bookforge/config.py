@@ -142,7 +142,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # has no non-whitespace seed. raw_dir, when set, also receives chNN-vX-<family>-raw.txt.
     # beat_by_beat is off for the library drafter. The Gemma tier turns it on in the write
     # step. beats_per_call is 1, or 2 to draft a pair of beats in one call.
-    "write": {"require_human_seed": True, "raw_dir": None, "beat_by_beat": False, "beats_per_call": 1},
+    # context_budget_tokens unset keeps today's write prompt. prior_words is the tail kept
+    # when a budget is set (current scene so far, else the previous scene or chapter).
+    "write": {"require_human_seed": True, "raw_dir": None, "beat_by_beat": False, "beats_per_call": 1,
+              "context_budget_tokens": None, "prior_words": 1500},
     # Anti-AI pass. Detector hits ride the existing editor. The residual LLM rewrite is off
     # unless deai.rewrite_residual is true. external_detector is report-only (no key in the repo).
     "deai": {"max_flag_ratio": 0.0, "max_loops": 2, "min_severity": 2, "cluster": 3,

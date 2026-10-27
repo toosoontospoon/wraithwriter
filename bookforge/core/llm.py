@@ -265,7 +265,13 @@ def estimate_cost(model, usage, config) -> float:
     return (max(0, pt - cr - cw) * pin + cr * pread + cw * pwrite + ct * pout) / 1e6
 
 
-def _log_usage(role, prov, model, usage, latency, config):
+def _prompt_tokens_est(system, prompt) -> int:
+    """Same estimator the write-budget trim uses. No network and no new tokenizer."""
+    from bookforge.core.pack import prompt_token_estimate
+    return prompt_token_estimate((system or "") + "\n\n" + (prompt or ""))
+
+
+def _log_usage(role, prov, model, usage, latency, config, prompt_tokens_est=None):
     global _SPENT
     pt = int(usage.get("prompt_tokens", 0) or 0)
     ct = int(usage.get("completion_tokens", 0) or 0)
@@ -273,7 +279,7 @@ def _log_usage(role, prov, model, usage, latency, config):
     cost = float(usage["cost_usd"]) if usage.get("cost_usd") is not None else est
     _SPENT += cost
     row = {"ts": time.time(), "role": role, "provider": prov, "model": model,
-           "prompt_tokens": pt, "completion_tokens": ct,
+           "prompt_tokens": pt, "prompt_tokens_est": prompt_tokens_est, "completion_tokens": ct,
            "cached_tokens": int(usage.get("cached_tokens", 0) or 0),
            "cache_write_tokens": int(usage.get("cache_write_tokens", 0) or 0),
            "reasoning_tokens": int((usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) or 0),
@@ -293,7 +299,8 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
         if not isinstance(out, str):
             out = json.dumps(out)
         _log_usage(role, "fake", "fake", {"prompt_tokens": (len(system or "") + len(prompt)) // 4,
-                                          "completion_tokens": len(out) // 4}, 0.0, config)
+                                          "completion_tokens": len(out) // 4}, 0.0, config,
+                   prompt_tokens_est=_prompt_tokens_est(system, prompt))
         return out
     budget = config["llm"].get("budget_usd")
     if budget is not None and _SPENT >= float(budget):
@@ -311,7 +318,8 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
         try:
             t0 = time.time()
             text, usage = prov.chat(model, system, prompt, temperature, max_tokens, json_mode)
-            _log_usage(role, provider, model, usage, time.time() - t0, config)
+            _log_usage(role, provider, model, usage, time.time() - t0, config,
+                       prompt_tokens_est=_prompt_tokens_est(system, prompt))
             return text
         except TransientHTTPError as e:
             last = e

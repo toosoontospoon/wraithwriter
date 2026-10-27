@@ -12,7 +12,9 @@ only facts a human marked confirmed are. The bible and real text are the source 
 from __future__ import annotations
 
 import json
+import math
 import re
+import sys
 from pathlib import Path
 
 from bookforge.config import load_config
@@ -283,10 +285,222 @@ def notes_block(ctx, chapter: dict, scene: dict | None = None) -> str:
     return ("EXTRACTED NOTES (machine-made; the story pack wins):\n" + "\n".join(rows)) if rows else ""
 
 
+def prompt_token_estimate(text: str) -> int:
+    """Token estimate shared by the budget trim, the usage row, and pack preview.
+
+    Uses the in-repo counter when tiktoken is already loaded. Otherwise ``len/3.5``.
+    Does not import or download a tokenizer.
+    """
+    if not text:
+        return 0
+    if "tiktoken" in sys.modules:
+        from bookforge.core.context import count_tokens
+        return max(1, count_tokens(text))
+    return max(1, math.ceil(len(text) / 3.5))
+
+
+def context_budget_tokens():
+    """Write-prompt budget, or None when today's untrimmed prompt should be used."""
+    raw = (load_config().get("write") or {}).get("context_budget_tokens")
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def prior_word_count() -> int:
+    try:
+        n = int((load_config().get("write") or {}).get("prior_words") or 1500)
+    except (TypeError, ValueError):
+        return 1500
+    return n if n > 0 else 1500
+
+
+def last_words(text: str, n: int) -> str:
+    words = (text or "").split()
+    if len(words) <= n:
+        return (text or "").strip()
+    return " ".join(words[-n:])
+
+
+def prior_tail(ctx, chapter: dict, so_far: str, n: int | None = None) -> str:
+    """Last ``n`` words of this chapter so far, else of the previous chapter."""
+    n = prior_word_count() if n is None else n
+    if so_far and so_far.strip():
+        return last_words(so_far, n)
+    prior = [ch["id"] for ch in ctx.load_outline() if ch["id"] < chapter.get("id", "")]
+    if not prior:
+        return ""
+    return last_words(ctx.best_chapter_text(prior[-1]), n)
+
+
+def _scene_entity_ids(ctx, scene: dict) -> list[str]:
+    from bookforge.core.schema import slugify
+    names = list(scene.get("characters_present") or [])
+    chars = ctx.load_characters()
+    ids = []
+    for n in names:
+        c = match_character(chars, n)
+        ids.append(slugify((c or {}).get("id") or (c or {}).get("name") or n))
+    return list(dict.fromkeys(i for i in ids if i))
+
+
+def continuity_facts_block(ctx, scene: dict) -> str:
+    """Continuity and facts for entities present in this scene."""
+    ids = _scene_entity_ids(ctx, scene)
+    canon = ctx.canon()
+    lines = []
+    cont = canon.continuity_for(ids) if ids else {}
+    if cont:
+        lines.append("CONTINUITY:\n" + json.dumps(cont))
+    facts = canon.facts_for(ids) if ids else []
+    if facts:
+        lines.append("FACTS:\n" + "\n".join(f"- {f.get('claim', '')}" for f in facts))
+    d = bible_dir(ctx)
+    if d and (d / "continuity.md").exists() and names_present(scene):
+        wanted = {n.lower() for n in names_present(scene)}
+        kept = []
+        for para in (d / "continuity.md").read_text().split("\n\n"):
+            low = para.lower()
+            if any(n in low for n in wanted):
+                kept.append(para.strip())
+        if kept:
+            lines.append("CONTINUITY SHEET:\n" + "\n\n".join(kept))
+    if not lines:
+        return ""
+    return "CONTINUITY AND FACTS:\n" + "\n".join(lines)
+
+
+def names_present(scene: dict) -> list[str]:
+    return [n for n in (scene.get("characters_present") or []) if n]
+
+
+def older_chapter_block(ctx, chapter: dict) -> str:
+    """Summaries of prior chapters, plus a short style-bible head. No full chapter text."""
+    prior = [ch["id"] for ch in ctx.load_outline() if ch["id"] < chapter.get("id", "")]
+    s = ctx.load_summaries()
+    parts = []
+    if prior:
+        parts.append("EARLIER CHAPTERS (summaries):\n" + "\n".join(
+            f"- {pid}: {(s.get('chapters') or {}).get(pid, '(no summary)')}" for pid in prior))
+    sb = ctx.style()
+    root = getattr(sb, "root", None)
+    if root and (Path(root) / "style_bible.md").exists():
+        words = (Path(root) / "style_bible.md").read_text().split()
+        parts.append("STYLE BIBLE (condensed):\n" + " ".join(words[:400]))
+    return "\n\n".join(parts)
+
+
+def _shrink_to_estimate(text: str, room: int) -> str:
+    if room <= 0 or not text:
+        return ""
+    if prompt_token_estimate(text) <= room:
+        return text
+    lo, hi, best = 0, len(text), ""
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        chunk = text[:mid]
+        if prompt_token_estimate(chunk) <= room:
+            best = chunk
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
+def _condense_facts(ctx, chapter, scene, facts_text: str, room: int) -> str:
+    """One plan-role condensation per scene, reused by later write calls."""
+    key = (chapter.get("id"), scene.get("scene_number"))
+    cache = getattr(ctx, "_condensed_facts", None)
+    if cache is None:
+        cache = {}
+        ctx._condensed_facts = cache
+    if key not in cache:
+        card = {k: scene.get(k) for k in ("scene_number", "pov", "location", "characters_present", "purpose")
+                if scene.get(k)}
+        card["beats"] = list(scene.get("beats") or [])
+        from bookforge.core.llm import llm_call
+        res = llm_call(
+            "CONDENSE FACTS for the writer. Keep only continuity this scene still needs.\n"
+            f"SCENE CARD: {json.dumps(card)}\n"
+            f"SCENE: {scene.get('scene_number')}\n"
+            f"FACTS:\n{facts_text[:8000]}\n"
+            'Output ONLY JSON: {"beats": ["condensed continuity"]}',
+            role="plan", json_mode=True, temperature=0.1, max_tokens=800)
+        cache[key] = res if isinstance(res, str) else json.dumps(res)
+    return _shrink_to_estimate("CONTINUITY AND FACTS (condensed):\n" + cache[key], room)
+
+
+def _trim_blocks(system: str, blocks: list[tuple[str, str]], budget: int, condense) -> str:
+    """Keep blocks from the top until the estimate fits. Facts are condensed instead of dropped."""
+    def estimate(parts: list[str]) -> int:
+        body = "\n\n".join(p for p in parts if p)
+        return prompt_token_estimate(system + "\n\n" + body if body else system)
+
+    selected: list[str] = []
+    for name, text in blocks:
+        if not text:
+            continue
+        if estimate(selected + [text]) <= budget or (name == "mandatory" and not selected):
+            selected.append(text)
+            continue
+        if name == "facts":
+            room = budget - estimate(selected)
+            short = condense(text, max(0, room))
+            if short and estimate(selected + [short]) <= budget:
+                selected.append(short)
+            continue
+        break
+    return "\n\n".join(selected)
+
+
+def _budget_system(ctx, chapter) -> str:
+    """Rules only. The story pack is assembled, in priority order, in the user prompt."""
+    from bookforge.core.deai import prose_rules_block
+    return "\n\n".join(x for x in (PERSONA, RULE_CARD, prose_rules_block()) if x)
+
+
+def _build_write_budgeted(ctx, chapter, scene, beats, so_far, ceiling_words, part, parts, budget) -> tuple[str, str]:
+    """Beats and the scene card first. Lower blocks drop until the estimate fits."""
+    card = {k: scene.get(k) for k in ("scene_number", "pov", "location", "time", "characters_present",
+                                       "purpose", "conflict", "sensory_anchor", "closing_image") if scene.get(k)}
+    pp = f" (part {part} of {parts}; write only these beats)" if parts > 1 else ""
+    mandatory = "\n\n".join([
+        f"BEATS TO WRITE NOW{pp}:\n" + "\n".join(f"{i}. {b}" for i, b in enumerate(beats, 1)),
+        "SCENE CARD: " + json.dumps(card),
+        f"YOUR JOB: write part {part} of scene {scene.get('scene_number')} of chapter {chapter['id']}, "
+        "following the RULE CARD in the system prompt.",
+        "LENGTH: write each beat to completion, then stop. "
+        f"Hard ceiling: {ceiling_words} words (a limit, never a goal). Output ONLY the prose.",
+    ])
+    voice = voices(ctx, names_present(scene))
+    facts = continuity_facts_block(ctx, scene)
+    tail = prior_tail(ctx, chapter, so_far)
+    prior = ("PRIOR TEXT (the last words already written; continue from the end, do not repeat them):\n" + tail) if tail else ""
+    blocks = [("mandatory", mandatory), ("voices", voice), ("facts", facts), ("prior", prior),
+              ("summaries", older_chapter_block(ctx, chapter))]
+    system = _budget_system(ctx, chapter)
+
+    def condense(text, room, scene=scene):
+        return _condense_facts(ctx, chapter, scene, text, room)
+
+    return system, _trim_blocks(system, blocks, budget, condense)
+
+
 def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, ceiling_words: int,
                 part: int = 1, parts: int = 1) -> tuple[str, str]:
     """(system, user) for one scene write call. Cached prefix first (system, then the chapter pack);
-    the chapter so far, the scene's job and the length line last."""
+    the chapter so far, the scene's job and the length line last.
+
+    A set ``write.context_budget_tokens`` rebuilds that prompt in priority order and trims
+    from the bottom. Unset keeps this path.
+    """
+    budget = context_budget_tokens()
+    if budget:
+        return _build_write_budgeted(ctx, chapter, scene, beats, so_far, ceiling_words, part, parts, budget)
     from bookforge.core import threads
     blocks = [chapter_plan_block(chapter, scene), notes_block(ctx, chapter, scene),
               "CHAPTER SO FAR (everything already written in this chapter; continue from its last line):\n"
@@ -322,6 +536,9 @@ def fit_write_context(ctx, system: str, user: str, provider: str | None = None,
     """
     from bookforge.config import prompt_budget_for, resolve_role
     from bookforge.core.context import count_tokens, truncate_tokens
+    # The priority trim already ran. A later tail shrink would drop the beats and the card.
+    if context_budget_tokens():
+        return system, user
     if not (provider and model):
         provider, model = resolve_role("write")
     budget = prompt_budget_for(provider, model, getattr(ctx, "total_context_tokens", None))
