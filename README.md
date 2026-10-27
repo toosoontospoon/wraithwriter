@@ -95,6 +95,8 @@ On a 9,700-word test chapter, the packet cut editor input from about 62k to abou
 
 Off unless `talkie.enabled` is true. The pipeline step then sits after revise and before de-AI. It writes `manuscript/<id>_talkie.txt` and does not overwrite the draft or the revision. `bookforge talkie run` is an explicit opt-in even when the flag is false.
 
+What the stage does, how to run the local server, and the experimental A/B numbers are in [docs/talkie.md](docs/talkie.md).
+
 ```yaml
 talkie:
   enabled: false
@@ -146,7 +148,7 @@ Flags:
 | `deai.max_tell_drop` | 0.5 | How far the 0-10 detector score may fall before the guard acts |
 | `deai.rewrite_residual` | false | After the editor, rewrite paragraphs that still have a severity >= 2 narration hit, then re-scrub. The duties-gate rollback still applies. Off adds no LLM call |
 | `deai.external_detector` | `provider: none` | Report-only hook after the final scrub. `pangram` reads the env var named by `api_key_env` (default `PANGRAM_API_KEY`) and records `skipped: no key` when it is unset. It never edits the chapter and never logs the key |
-| `talkie.enabled` | false | Opt-in reword. Off makes zero talkie, Jev or Sol calls. See the block below |
+| `talkie.enabled` | false | Opt-in reword. Off makes zero talkie, Jev or Sol calls. See the Talkie reword block and [docs/talkie.md](docs/talkie.md) |
 | `screen.enabled` | true | Code checks still run without `TYPESAFE_API_KEY`. Jev is skipped cleanly |
 | `screen.deai_questions` | true | The six de-AI questions on the existing per-section Jev call |
 
