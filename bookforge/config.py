@@ -140,7 +140,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     "revise": {"recritique": True, "max_passes": 1},
     # Human opening for the write step. True refuses to draft a chapter whose first scene
     # has no non-whitespace seed. raw_dir, when set, also receives chNN-vX-<family>-raw.txt.
-    "write": {"require_human_seed": True, "raw_dir": None},
+    # beat_by_beat is off for the library drafter. The Gemma tier turns it on in the write
+    # step. beats_per_call is 1, or 2 to draft a pair of beats in one call.
+    "write": {"require_human_seed": True, "raw_dir": None, "beat_by_beat": False, "beats_per_call": 1},
     # Anti-AI pass. Detector hits ride the existing editor. The residual LLM rewrite is off
     # unless deai.rewrite_residual is true. external_detector is report-only (no key in the repo).
     "deai": {"max_flag_ratio": 0.0, "max_loops": 2, "min_severity": 2, "cluster": 3,
