@@ -272,6 +272,55 @@ def system_for(ctx, chapter: dict | None = None) -> str:
     return "\n\n".join(x for x in (PERSONA, RULE_CARD, prose_rules_block(), sp, cc) if x)
 
 
+def chapter_plan_sources(ctx, chapter_id: str) -> tuple[str, str, str]:
+    """(plan text, notes text, sha256 of the file bytes). Missing files contribute nothing."""
+    import hashlib
+    cfg = load_config().get("plan") or {}
+    template = cfg.get("plan_file") or ""
+    notes = cfg.get("notes_files") or []
+    if isinstance(notes, str):
+        notes = [notes]
+    root = Path(ctx.project_dir)
+
+    def read(tmpl: str) -> tuple[str, bytes]:
+        if not tmpl:
+            return "", b""
+        try:
+            rel = str(tmpl).format(chapter_id=chapter_id)
+        except (KeyError, IndexError, ValueError):
+            return "", b""
+        path = root / rel
+        if not path.is_file():
+            return "", b""
+        data = path.read_bytes()
+        return data.decode("utf-8"), data
+
+    plan_text, plan_bytes = read(template)
+    note_parts, note_blobs = [], []
+    for tmpl in notes:
+        text, data = read(tmpl)
+        if data:
+            note_parts.append(text)
+            note_blobs.append(data)
+    digest = hashlib.sha256()
+    digest.update(plan_bytes)
+    for blob in note_blobs:
+        digest.update(b"\0")
+        digest.update(blob)
+    return plan_text, "\n\n".join(note_parts), digest.hexdigest()
+
+
+def author_plan_block(ctx, chapter_id: str) -> str:
+    """Plan file and notes for beat planning. Empty when the keys are unset or the files are missing."""
+    plan_text, notes_text, _digest = chapter_plan_sources(ctx, chapter_id)
+    parts = []
+    if plan_text.strip():
+        parts.append("AUTHOR PLAN FILE:\n" + plan_text.strip())
+    if notes_text.strip():
+        parts.append("AUTHOR NOTES (these notes override the plan file when they disagree):\n" + notes_text.strip())
+    return "\n\n".join(parts)
+
+
 def notes_block(ctx, chapter: dict, scene: dict | None = None) -> str:
     """Volatile extracted notes (change as extraction runs), kept OUT of the cached prefix."""
     names = speakers(ctx, chapter, scene)

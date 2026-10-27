@@ -24,8 +24,10 @@ class BeatSheet(_Loose):
     beats: list[str] = Field(default_factory=list)
 
 
-def _scene_card_hash(chapter, scene):
-    return stable_hash([chapter.get("id"), scene, chapter.get("ends_with")])
+def _scene_card_hash(ctx, chapter, scene):
+    from bookforge.core import pack
+    _plan, _notes, plan_hash = pack.chapter_plan_sources(ctx, chapter.get("id"))
+    return stable_hash([chapter.get("id"), scene, chapter.get("ends_with"), plan_hash])
 
 
 def _plan_beats(ctx, chapter, scene, step_dir):
@@ -35,6 +37,7 @@ def _plan_beats(ctx, chapter, scene, step_dir):
     from bookforge.core.length import BEAT_TYPE_GUIDE, CRISIS_RULE, NO_FILLER_RULE
     from bookforge.core import pack
     res = llm_call(f"""{pack.chapter_pack(ctx, chapter)}{pack.chapter_plan_block(chapter, scene)}
+{pack.author_plan_block(ctx, chapter["id"])}
 
 Turn this scene card into an ordered beat sheet of 1-8 concrete beats: exactly as many as the scene's events need. {BEAT_TYPE_GUIDE} {NO_FILLER_RULE} {CRISIS_RULE}
 
@@ -182,7 +185,7 @@ def _flag_drift(step_dir, scene, chunk, beats, reason):
 def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=None):
     from bookforge.core.human_seed import seed_for_scene
     sp = ctx.progress["scenes"].setdefault(chapter["id"], {}).setdefault(str(scene["scene_number"]), {})
-    card = _scene_card_hash(chapter, scene)
+    card = _scene_card_hash(ctx, chapter, scene)
     if sp.get("card") != card:
         sp.clear()
         sp["card"] = card

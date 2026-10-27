@@ -164,6 +164,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
                "subjects": [], "session_subjects": {}, "afternoon_only": [], "event_times": {},
                "max_new_per_scene": 0, "default_rules": [], "canon": []},
     "plan_sync": {"enabled": True},  # resync stored scene plans after heavy revision (core/plan_sync.py)
+    # Optional author plan for beat planning. Off unless a template is set and the file exists.
+    # Notes override the plan file. Paths are relative to the project and may use {chapter_id}.
+    "plan": {"plan_file": None, "notes_files": []},
     # Narrator re-voice pass inside the revise step (see core/voice.py). Off by default; enable per project.
     "voice": {"enabled": False, "role": "revision", "min_ratio": 0.0, "max_ratio": 1.0, "max_tell_drop": 0.3, "instructions": ""},
     # Style bible + voice sheets: style_bible.md and voices/*.yaml in the project dir, or bible_dir
