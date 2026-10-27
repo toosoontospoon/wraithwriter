@@ -46,7 +46,7 @@ def _duties(ctx, chapter, text, step_dir):
 
 def run(ctx, chapter_id: str):
     inputs = progress.input_hash(ctx, "deai", chapter_id)
-    src = ctx.chapter_path(chapter_id, "revised")
+    src = ctx.deai_source(chapter_id)
     if not src.exists():
         raise FileNotFoundError(f"Revise {chapter_id} first")
     step_dir = ctx.new_step_folder(f"deai_{chapter_id}")

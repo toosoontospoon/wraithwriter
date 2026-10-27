@@ -17,7 +17,7 @@ Stages, models, the screen, and the token scrub: [docs/pipeline.md](docs/pipelin
 
 ## Direction
 
-Current work explores base-model drafting and rewording with `talkie-1930-13b-base`, then a budgeted fact fix. That stage is in progress in its own pull request on branch `talkie-rolling`. It is not in this tree, and its config is not documented here.
+Current work explores base-model drafting and rewording with `talkie-1930-13b-base`, then a budgeted fact fix. That is the opt-in talkie stage below.
 
 ## Setup
 
@@ -111,6 +111,12 @@ bookforge structure check --project projects/myproject
 The de-AI step scrubs with fiction mode inside `bookforge/style/vendor/token_scrub/scrub.py`, loaded by `bookforge.core.deai.scrub`. There is no separate fiction-safe script. The file's own CLI defaults to `--mode prose`. `deai.rewrite_residual` defaults to false, so that step adds no LLM call. `deai.external_detector.provider` defaults to `none`. `pangram` does not call the network in this tree: a missing key is `skipped: no key`, and a set key is `skipped: not implemented`.
 
 Prompt caching is on (`llm.cache.enabled`, default true). `llm.budget_usd` is the only spend stop, and it defaults to no cap. Detail is in [docs/pipeline.md](docs/pipeline.md) and [docs/config.md](docs/config.md).
+
+## Talkie reword
+
+Off unless `talkie.enabled` is true. The pipeline step then sits after revise and before de-AI. It writes `manuscript/<id>_talkie.txt` and does not overwrite the draft or the revision. `bookforge talkie run` is an explicit opt-in even when the flag is false. With the flag false, the pipeline makes zero talkie, Jev or fixer calls.
+
+What the stage does, its `talkie:` config block, how to run the local server, and the experimental A/B numbers are in [docs/talkie.md](docs/talkie.md).
 
 ## License
 

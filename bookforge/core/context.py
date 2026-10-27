@@ -160,8 +160,24 @@ class BookContext:
     def chapter_path(self, chapter_id: str, kind: str = "draft") -> Path:
         return self.manuscript_dir / f"{chapter_id}_{kind}.txt"
 
+    def talkie_current(self, chapter_id: str) -> bool:
+        """The talkie reword counts only while talkie.enabled is on and it is not older than the revision."""
+        from bookforge.config import load_config
+        if not (load_config().get("talkie") or {}).get("enabled"):
+            return False
+        t, r = self.chapter_path(chapter_id, "talkie"), self.chapter_path(chapter_id, "revised")
+        return t.exists() and (not r.exists() or t.stat().st_mtime >= r.stat().st_mtime)
+
+    def deai_source(self, chapter_id: str):
+        """Input for the de-AI step: a current talkie reword, else the revision."""
+        if self.talkie_current(chapter_id):
+            return self.chapter_path(chapter_id, "talkie")
+        return self.chapter_path(chapter_id, "revised")
+
     def best_chapter_text(self, chapter_id: str) -> str:
-        for kind in ("final", "revised", "draft"):
+        for kind in ("final", "talkie", "revised", "draft"):
+            if kind == "talkie" and not self.talkie_current(chapter_id):
+                continue
             p = self.chapter_path(chapter_id, kind)
             if p.exists():
                 return p.read_text()
