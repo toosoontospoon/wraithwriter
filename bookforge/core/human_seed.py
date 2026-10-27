@@ -81,6 +81,16 @@ def ends_inside_open_quote(body: str) -> bool:
     return straight
 
 
+def drop_reopened_quote(continuation: str) -> str:
+    """The seed already opened the spoken line. A model that opens it again (``"Go on``)
+    would leave ``""Go on``. Drop leading whitespace and that one repeated opening quote.
+    Only the continuation changes; the seed is never touched."""
+    rest = continuation.lstrip(" \t\r\n")
+    if rest[:1] in ('"', "\u201c"):
+        return rest[1:]
+    return continuation
+
+
 def join_opening(opening: str, continuation: str) -> str:
     """Append a continuation after a seed body.
 
@@ -90,7 +100,7 @@ def join_opening(opening: str, continuation: str) -> str:
     if not opening:
         return continuation
     if ends_inside_open_quote(opening):
-        return opening + continuation
+        return opening + drop_reopened_quote(continuation)
     if not continuation:
         return opening
     return opening + "\n\n" + continuation
@@ -101,7 +111,8 @@ def continuation_note(opening: str) -> str:
     if ends_inside_open_quote(opening):
         return ("ALREADY WRITTEN (verbatim; continue directly after this; "
                 "do not repeat or rewrite it). You are continuing inside that spoken line; "
-                "the next character follows the opening quote with no inserted whitespace:\n"
+                "the next character follows the opening quote with no inserted whitespace. "
+                "Do not write another opening quote mark; start with the first spoken word:\n"
                 + opening)
     return ("ALREADY WRITTEN (verbatim; continue directly after this; "
             "do not repeat or rewrite it):\n" + opening)

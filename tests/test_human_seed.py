@@ -244,3 +244,13 @@ def test_cli_raw_dir_twice(project, fake, tmp_path):
     assert chapter.startswith(opening)
     assert (raw / "ch01-v1-gemma-raw.txt").read_text(encoding="utf-8").startswith(opening)
     assert (raw / "ch01-v2-gemma-raw.txt").read_text(encoding="utf-8").startswith(opening)
+
+
+def test_open_quote_seed_drops_a_reopened_quote_from_the_continuation():
+    from bookforge.core.human_seed import join_opening
+    seed = 'Caleb looked up.\n\n"'
+    assert join_opening(seed, '"Go on then," Caleb said.') == seed + 'Go on then," Caleb said.'
+    assert join_opening(seed, '\u201cGo on.') == seed + "Go on."
+    assert join_opening(seed, 'Go on then."') == seed + 'Go on then."'
+    out = join_opening(seed, '\n"Go on."')
+    assert out.startswith(seed) and not out.startswith(seed + '"')
