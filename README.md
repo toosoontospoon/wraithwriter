@@ -15,33 +15,78 @@ It keeps a cost and usage log for every call. The Python package is `bookforge`.
 
 ## Setup
 
-    python -m venv .venv && . .venv/bin/activate
-    pip install -e ".[test]"
-    cp .env.example .env     # fill in only the providers you use, then: set -a; . ./.env; set +a
-    pytest -q
+Requires Python 3.10+. The installable package is `bookforge` (console script `bookforge`, also `python -m bookforge.cli`).
 
-API keys are read only from environment variables:
+```bash
+python -m venv .venv && . .venv/bin/activate
+pip install -e ".[test]"
+cp .env.example .env     # fill in only the providers you use
+set -a; . ./.env; set +a
+python -m pytest -q
+```
 
-| Variable | Used for |
-|---|---|
-| `XAI_API_KEY` | brainstorm role |
-| `OPENROUTER_API_KEY` | default planner, drafter, editor and utility tiers |
-| `ANTHROPIC_API_KEY` | optional |
-| `TYPESAFE_API_KEY` | optional Jev screen (see below) |
+The code never reads `.env` by itself. Export the variables, or source the file as above. Do not print a key.
 
-Each provider's `api_key_env` names its variable. No key belongs in code or config files.
+Optional extras in `pyproject.toml`:
 
-`bookforge config-init` writes a user config with model tiers and roles you can override. You can also point `BOOKFORGE_CONFIG` at a YAML file. Per-tier env overrides also work, for example `BOOKFORGE_EDITOR_MODEL` and `BOOKFORGE_DRAFTER_REASONING_EFFORT`.
+| Extra | Packages | When |
+|---|---|---|
+| `test` | pytest | `python -m pytest` |
+| `webui` | streamlit | `streamlit run webui.py` |
+| `tokens` | tiktoken | Exact token counts. Without it, counts are `len(text) // 4`. |
+| `vectors` | sentence-transformers, numpy | Dense retrieval, and only if `embeddings.enabled` is true (default false). |
+
+Core dependencies are click, requests, pydantic, and pyyaml.
+
+### Environment
+
+API keys come from the variable named by each provider's `api_key_env`. No key belongs in code or in the YAML config.
+
+| Variable | Read by | Used for |
+|---|---|---|
+| `XAI_API_KEY` | `llm.providers.xai` | Brainstorm role (`grok-4.7` on xAI). Not a tier, so the `BOOKFORGE_*` tier overrides do not change it. |
+| `OPENROUTER_API_KEY` | `llm.providers.openrouter` | Default provider for the planner, drafter, editor, and utility tiers. |
+| `ANTHROPIC_API_KEY` | `llm.providers.anthropic` | Only when a tier's provider is `anthropic`. |
+| `TYPESAFE_API_KEY` | `bookforge/core/jev.py` | Optional Jev screen. Without it, code checks still run and Jev is skipped. |
+| `PANGRAM_API_KEY` | `deai.external_detector` | Only when that block's `provider` is `pangram`. The default provider is `none`, so this variable is not read. |
+| `BOOKFORGE_CONFIG` | `config.config_path` | YAML merged over `DEFAULT_CONFIG`. Unset means `~/.bookforge/config.yaml`. |
+| `BOOKFORGE_<TIER>_PROVIDER` | `resolve_role` | Tiers: `PLANNER`, `DRAFTER`, `EDITOR`, `UTILITY`. Overrides that tier's provider. |
+| `BOOKFORGE_<TIER>_MODEL` | `resolve_role` | Overrides that tier's model. |
+| `BOOKFORGE_<TIER>_REASONING_EFFORT` | `role_params` | `low`, `medium`, `high`, or `none` (omit the reasoning body). |
+| `BOOKFORGE_PROTECT_EXACT_LINES` | `protect.exact_enabled` | `1`, `true`, `yes`, or `on` turns on exact `KEEP` / `SUBTEXT` line protection. Off by default. `FACT` / `EVENT` hints stay on without it. |
+
+`bookforge config-init` writes a key-free copy of the defaults to `$BOOKFORGE_CONFIG` or `~/.bookforge/config.yaml`, and only if that file does not already exist. `bookforge run --edit-effort low|medium|high` sets `BOOKFORGE_EDITOR_REASONING_EFFORT` for that process.
+
+Ollama is a provider with an empty `api_key_env` (`http://localhost:11434/v1`). It needs no key.
+
+### Project files
+
+```bash
+bookforge init "A lighthouse keeper finds a message in a bottle" --project projects/myproject
+```
+
+`--words` is accepted and ignored. `--no-research` skips web research during brainstorm. With no `--project`, the directory is `projects/<slug>_<timestamp>`.
+
+A project holds `metadata.json`, `progress.json`, `costs.jsonl`, `threads.yaml`, `steps/`, `state/` (`outline.json`, `characters.json`, `world.json`, `summaries.json`, canon, `state/facts/`, `state/craft/ledger.json`, `state/usage.jsonl`), and `manuscript/` (`<id>_draft.txt`, `<id>_revised.txt`, `<id>_final.txt`). Style files, when you add them, are `style_bible.md` and `voices/*` in the project directory, or in `style.bible_dir` / `metadata.style_bible_dir`.
+
+`.gitignore` ignores `projects/`, `project/`, `*-project/`, `manuscript/`, `manuscripts/`, `state/`, `logs/`, `output/`, `outputs/`, `*.log`, and `*.jsonl` anywhere in the tree.
 
 ## Usage
 
-    bookforge init "A lighthouse keeper finds a message in a bottle" --project projects/myproject
-    bookforge run --project projects/myproject --step all   # runs or resumes the pipeline
-    bookforge run --project projects/myproject --step revise   # one step
-    bookforge cost --project projects/myproject
-    bookforge structure check --project projects/myproject
+Full flags, aliases, and subcommands: [docs/cli.md](docs/cli.md).
 
-Project folders, manuscripts, state and logs are git-ignored.
+```bash
+bookforge run --project projects/myproject --step all
+bookforge run --project projects/myproject --step revise --chapter ch03
+bookforge run --project projects/myproject --from critique --to deai --chapter ch03
+bookforge run --project projects/myproject --restart-from revise --step revise --chapter ch03
+bookforge cost --project projects/myproject
+bookforge structure check --project projects/myproject
+```
+
+`--step` names, in order: `brainstorm`, `outline`, `initialize_cast_and_world`, `write`, `critique`, `revise`, `deai`, `audit`, `finalize`, or `all`. `write`, `critique`, `revise`, and `deai` are per chapter. `--from` and `--to` are an inclusive range and must be given together. `--restart-from` marks that step and everything after it stale, archives stale chapter files when the restart is at or before `write`, and does not run anything unless you also pass `--step` or a range.
+
+`bookforge cost` reports `<project>/state/usage.jsonl` (default grouping: chapter). `bookforge costs` totals `<project>/costs.jsonl` by role. Set `llm.budget_usd` to stop before the next call once spend reaches the cap. The default is no cap. The process does not complete a leftover scene after the cap or after an out-of-credit HTTP error. Those errors surface as `BudgetExceeded` or `LLMError`.
 
 ## The revision gate: code checks first, then Jev, then the expensive editor
 
@@ -85,8 +130,12 @@ screen:
 
 To try it without calling the editor:
 
-    bookforge screen facts --project projects/myproject --chapter ch01
-    bookforge screen run   --project projects/myproject --chapter ch01 [--no-jev]   # writes revision_packet.md and screen_estimate.json
+```bash
+bookforge screen facts --project projects/myproject --chapter ch01
+bookforge screen run   --project projects/myproject --chapter ch01 --no-jev
+```
+
+`screen run` writes `revision_packet.md` and `screen_estimate.json` under a new `steps/` folder. It never calls the editor. `--no-jev` is optional. `--text` reads a file instead of the draft.
 
 On a 9,700-word test chapter, the packet cut editor input from about 62k to about 17.6k tokens (72% less). Jev cost under half a cent per chapter.
 
