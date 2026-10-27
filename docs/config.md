@@ -111,7 +111,9 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 | `block_caps.voices` | `1500` | Per-block token cap. |
 | `scene_max_words_per_call` | `6000` | Splits a scene's beats across drafter calls. |
 | `working_chunk_words` | `500` | Stored on `BookContext`. No other reader in this tree. |
-| `prior_text` | `full` | `full` keeps recent chapter prose in the chapter pack (`pack.recent_chapters` full texts, older chapters as summaries). `summaries_plus_prev_plan` drops that prose. A call then gets summaries of every prior chapter, the previous chapter's plan (`plan.plan_file` when that file exists, otherwise the outline chapter card, scene cards, and beats), and the current chapter's plan by the same lookup plus `plan.notes_files`. The write call still gets the last `write.prior_words` (default 1500) of text already written in the current chapter. Beat planning, critique, and the write step all use this pack. A set `write.context_budget_tokens` trims after this selection. The Gemma example sets `summaries_plus_prev_plan`. |
+| `prior_text` | `full` | `full` keeps recent chapter prose in the chapter pack (`pack.recent_chapters` full texts, older chapters as summaries). `summaries_plus_prev_plan` drops that prose. A call then gets summaries of every prior chapter, the previous chapter's plan (`plan.plan_file` when that file exists, otherwise the outline chapter card, scene cards, and beats), and the current chapter's plan by the same lookup plus `plan.notes_files`. The write call still gets the last `write.prior_words` (default 1500) of text already written in the current chapter. Beat planning, critique, and the write step all use this pack. A set `write.context_budget_tokens` trims after this selection. This mode also limits `characters.md` to the chapter cast. The Gemma example sets `summaries_plus_prev_plan`. |
+| `characters` | `null` | `null` keeps the whole `characters.md` unless `prior_text` is `summaries_plus_prev_plan`. `chapter_cast` keeps only entries for this chapter: every scene card's `characters_present` and POV, anyone named in the chapter plan, notes, or beats (headings, aliases, and first names, case-insensitive), plus `always_characters`. Voice sheets stay limited to the scene's speakers. |
+| `always_characters` | `[]` | Names that stay in `characters.md` when the cast filter is on, such as `Eve Fifth`. |
 
 ## `brainstorm`
 
@@ -296,11 +298,13 @@ write:
   beats_per_call: 1
 context:
   prior_text: summaries_plus_prev_plan
+  always_characters:
+    - Eve Fifth
 talkie:
   enabled: false
 ```
 
-Gemma context is 32k tokens. USD per 1M: input 0.48, cached (cache read) 0.10, output 1.44. No reasoning body is sent to that model. The example write block above is the Gemma drafter: a 24000-token context budget, one beat per call, and talkie left off as an opt-in fallback. Library defaults do not set that budget and do not turn `beat_by_beat` on.
+Gemma context is 32k tokens. USD per 1M: input 0.48, cached (cache read) 0.10, output 1.44. No reasoning body is sent to that model. The example write block above is the Gemma drafter: a 24000-token context budget, one beat per call, and talkie left off as an opt-in fallback. `context.always_characters` keeps that name in `characters.md` when the chapter-cast filter is on. Library defaults do not set that budget, do not turn `beat_by_beat` on, leave `prior_text` at `full`, and leave `always_characters` empty.
 
 ## `talkie`
 
