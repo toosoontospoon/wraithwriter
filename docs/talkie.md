@@ -6,7 +6,7 @@ The stage is off unless `talkie.enabled` is true. `bookforge talkie run` is an e
 
 ## What it does
 
-After revise, and before de-AI, the step reads the revised chapter (or the draft when no revision exists) and writes `manuscript/<id>_talkie.txt`. It does not overwrite the draft or the revision. De-AI then prefers the talkie file when one exists.
+After revise, and before de-AI, the step reads the revised chapter (or the draft when no revision exists) and writes `manuscript/<id>_talkie.txt`. It does not overwrite the draft or the revision. While `talkie.enabled` is on, de-AI reads the talkie file when it is not older than the revision. With the flag off, or after a newer revision, de-AI reads the revision and ignores a leftover talkie file.
 
 Each prose paragraph is reworded in order. History is the paragraphs already fixed.
 
@@ -29,7 +29,7 @@ The point is base-model wording. Detectors such as Pangram read token origin, so
 
 Download the weights yourself. This repo does not mirror them.
 
-The base model is Apache-2.0: [talkie-1930-13b-base](https://huggingface.co/talkie-lm/talkie-1930-13b-base). A Q4_K_M GGUF is listed on [talkie-1930-13b-base-GGUF](https://huggingface.co/niklassheth/talkie-1930-13b-base-GGUF).
+The base model is Apache-2.0: [talkie-1930-13b-base](https://huggingface.co/talkie-lm/talkie-1930-13b-base). A Q4_K_M GGUF (`talkie-base-Q4_K_M.gguf`) is in [talkie-1930-13b-base-GGUF](https://huggingface.co/niklassheth/talkie-1930-13b-base-GGUF). Use the base model, not an instruction-tuned variant.
 
 ```bash
 TALKIE_MODEL=/path/to/talkie-1930-13b-base-Q4_K_M.gguf tools/talkie_server.sh start
@@ -39,13 +39,13 @@ bookforge talkie run --file chapter.txt --out chapter_talkie.txt
 tools/talkie_server.sh stop
 ```
 
-`tools/talkie_server.sh` runs `ghcr.io/ggml-org/llama.cpp:server` in Docker with `--rm`, publishes `127.0.0.1:8080`, and starts the server with `-c 16384 -np 4`. `TALKIE_THREADS` (default 8) is passed to both `-t` and `-tb`. Set `TALKIE_WAIT_LOAD` to wait until the one-minute load average is under that number. The script never downloads or stores weights.
+`tools/talkie_server.sh` runs `ghcr.io/ggml-org/llama.cpp:server` in Docker with `--rm`, publishes `127.0.0.1:8080`, and starts the server with `-c 16384 -np 4`. `TALKIE_THREADS` (default 8) is passed to both `-t` and `-tb`. Keep `talkie.parallel` equal to `-np` (default 4): candidates and splice retellings are sent concurrently. If a container with the same name is already running, the script reuses it. Set `TALKIE_WAIT_LOAD` to wait until the one-minute load average is under that number. The script never downloads or stores weights.
 
 ## Speed and cost
 
 On a shared 8-core desktop CPU (Ryzen 7 3700X class), talkie time is about 40–65 minutes per 1,000 words. Jev plus Sol is about $0.12 per 1,000 words.
 
-One measured chapter of 666 words cost $0.077 ($0.116 per 1,000 words) and used 43.4 minutes of talkie time (about 65 minutes per 1,000 words). Mean final Jev scores on that run: dropped 0.68, invented 0.38, contradiction 0.16, name 0.15.
+One measured scene of 666 words (8 paragraphs) cost $0.077 ($0.116 per 1,000 words) and used 43.4 minutes of talkie time (about 65 minutes per 1,000 words). Mean final Jev scores on that run: dropped 0.68, invented 0.38, contradiction 0.16, name 0.15.
 
 ## Example
 
@@ -62,7 +62,9 @@ Jev pass means all four scores are at or under 0.5 and the code checks pass. Wor
 | Sol original | 8/8 | 1.00 | 1.00 | 0% | 100% | 100% | – |
 | Best-of-4 + Gemini fix | 1/8 | 0.25 | 0.43 | – | – | – | – |
 | Best-of-4 + Sol style fix | 5/8 | 0.94 | 0.88 | 44% | 56% | 44% | 5/8 |
-| Notes N0 (Sol, generic) | 8/8 | 1.00 | 1.00 | ~0% | ~100% | 49% | n/m |
-| Notes N1 (Sol + talkie notes) | 8/8 | 0.98 | 0.98 | ~9% talkie 4-grams | ~91% | 72% | n/m |
+| Notes N0 (Sol, generic) | 8/8 | 1.00 | 1.00 | ~0% | ~100% | 49%* | n/m |
+| Notes N1 (Sol + talkie notes) | 8/8 | 0.98 | 0.98 | ~9% talkie 4-grams* | ~91% | 72%* | n/m |
 | Rolling v3, Sol unconstrained (5 paragraphs) | 1/5 | 0.97 | 0.91 | 66% | 34% | 19% | 1/5 |
-| All-words rolling | 0/8 | 0.83 | 0.96 | 83% | 17% | 21% | 1/8 |
+| All-words rolling (this stage) | 0/8 | 0.83 | 0.96 | 83% | 17% | 21% | 1/8 |
+
+One 8-paragraph scene. Starred values cover two scenes (15 paragraphs); n/m means not measured. Every all-words fail was on dropped detail; the targeted pass exists for that case.

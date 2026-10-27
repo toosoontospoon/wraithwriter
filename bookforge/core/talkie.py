@@ -24,6 +24,7 @@ DEFAULTS = {
     "enabled": False,
     "endpoint": "http://127.0.0.1:8080",
     "n_rerolls": 4,
+    "parallel": 4,  # concurrent requests; match the server -np
     "history_window": 2,
     "edit_budget": 0.15,
     "sol_tries": 2,

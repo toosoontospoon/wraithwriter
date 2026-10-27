@@ -102,6 +102,7 @@ talkie:
   enabled: false
   endpoint: http://127.0.0.1:8080
   n_rerolls: 4
+  parallel: 4                # concurrent requests; match the server -np
   history_window: 2
   edit_budget: 0.15          # Sol may write at most max(3, this fraction of the paragraph)
   sol_tries: 2

@@ -65,7 +65,11 @@ start_server() {
     exit 2
   fi
   wait_for_load
-  docker rm -f "$NAME" >/dev/null 2>&1 || true
+  if [[ -n "$(docker ps -q -f "name=^${NAME}$")" ]]; then
+    echo "container ${NAME} is already running; reusing it"
+    wait_for_health
+    return
+  fi
   local dir base
   dir=$(dirname "$(realpath "$model")")
   base=$(basename "$model")

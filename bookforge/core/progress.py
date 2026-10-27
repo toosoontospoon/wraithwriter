@@ -60,9 +60,7 @@ def input_hash(ctx, step: str, ch: str | None = None) -> str:
         enabled = bool((load_config().get("talkie") or {}).get("enabled"))
         return stable_hash([_file_hash(src), enabled])
     if step == "deai":
-        talkie_p = ctx.chapter_path(ch, "talkie")
-        src = talkie_p if talkie_p.exists() else ctx.chapter_path(ch, "revised")
-        return _file_hash(src)
+        return _file_hash(ctx.deai_source(ch))
     if step in ("audit", "finalize"):
         texts = [stable_hash(ctx.best_chapter_text(c["id"])) for c in ctx.load_outline()]
         return stable_hash(texts + ([_run_id(ctx, "audit")] if step == "finalize" else []))

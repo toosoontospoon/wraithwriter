@@ -13,6 +13,7 @@ import difflib
 import json
 import re
 import statistics
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from bookforge.core import jev, llm, talkie
@@ -593,21 +594,45 @@ def load_targeted(path: Path) -> dict[int, dict]:
     return found
 
 
+def _gen_many(jobs, cfg, log_dir):
+    """Run ``(prompt, src, seed)`` jobs on the server's parallel slots; results keep job order."""
+    workers = max(1, int(cfg.get("parallel", 4)))
+    def one(job):
+        prompt, src, seed = job
+        return talkie.generate(prompt, src, seed, cfg=cfg, log_dir=log_dir)
+    if workers == 1 or len(jobs) <= 1:
+        return [one(j) for j in jobs]
+    with ThreadPoolExecutor(max_workers=workers) as pool:
+        return list(pool.map(one, jobs))
+
+
+def _retell_stock(context, ss, dropped, base, cfg, log_dir):
+    """Single-sentence retellings for each dropped source sentence. Returns (stock, slot seconds)."""
+    jobs, keys = [], []
+    for m in dropped:
+        if not (0 <= m < len(ss)) or not ss[m]:
+            continue
+        prompt = context + SENT_DEMO + "Pupil: " + ss[m] + "\nMaster:"
+        for s in range(int(cfg["splice_seeds"])):
+            jobs.append((prompt, ss[m], base + 10 * m + s))
+            keys.append(m)
+    stock = {m: [] for m in dropped}
+    gens = _gen_many(jobs, cfg, log_dir)
+    for m, gen in zip(keys, gens):
+        stock[m].append(gen)
+    return stock, _wall(gens, cfg)
+
+
+def _wall(gens, cfg) -> float:
+    """Wall-clock estimate: per-call seconds summed, divided by the parallel slots used."""
+    total = sum(float(g["wall"]) for g in gens)
+    return total / max(1, min(len(gens) or 1, int(cfg.get("parallel", 4))))
+
+
 def _fact_splice(talk, src, dropped, context, allow, vocab, cfg, log_dir, index):
     """Steps d-e: retell each dropped source sentence and drop splice duplicates."""
     ss = split_sentences(src)
-    stock = {}
-    wall = 0.0
-    for m in dropped:
-        if m < 0 or m >= len(ss):
-            continue
-        stock[m] = []
-        sent_prompt = context + SENT_DEMO + "Pupil: " + ss[m] + "\nMaster:"
-        for s in range(int(cfg["splice_seeds"])):
-            gen = talkie.generate(sent_prompt, ss[m], 8000 + 100 * index + 10 * m + s,
-                                  cfg=cfg, log_dir=log_dir)
-            stock[m].append(gen)
-            wall += float(gen["wall"])
+    stock, wall = _retell_stock(context, ss, dropped, 8000 + 100 * index, cfg, log_dir)
     _text, used, sents, splice_idx = splice(
         talk, src, dropped, stock, allow, vocab, float(cfg["splice_copy_max"]))
     sents, _gone = dedupe_splices(sents, splice_idx, float(cfg["dedupe_jaccard"]))
@@ -784,12 +809,9 @@ def _one(i, paragraphs, finals, cfg, persons, opening, log_dir, fewshot):
     window = int(cfg["history_window"])
     context = build_context(prose_src, prose_fixed, persons, opening, fewshot, window, i)
     prompt = paragraph_prompt(context, src)
-    cands = []
-    wall = 0.0
-    for k in range(max(1, int(cfg["n_rerolls"]))):
-        gen = talkie.generate(prompt, src, 1000 + 100 * i + k, cfg=cfg, log_dir=log_dir)
-        cands.append(gen)
-        wall += float(gen["wall"])
+    cands = _gen_many([(prompt, src, 1000 + 100 * i + k) for k in range(max(1, int(cfg["n_rerolls"])))],
+                      cfg, log_dir)
+    wall = _wall(cands, cfg)
     threshold = float(cfg["jev_threshold"])
     cap = float(cfg["cap_usd"])
     scores = jev_para(src, before, [c["text"] for c in cands], f"talkie:{i}", log_dir, cap)
@@ -802,18 +824,8 @@ def _one(i, paragraphs, finals, cfg, persons, opening, log_dir, fewshot):
     if not passed_talkie:
         _rs, ss, _err, miss = jev_localise(src, talk, f"talkie:{i}:loc", log_dir, cap)
         dropped = [m for m, p in enumerate(miss) if p > threshold]
-        stock = {}
-        for m in dropped:
-            stock[m] = []
-            sentence = ss[m] if m < len(ss) else ""
-            if not sentence:
-                continue
-            sent_prompt = context + SENT_DEMO + "Pupil: " + sentence + "\nMaster:"
-            for s in range(int(cfg["splice_seeds"])):
-                gen = talkie.generate(sent_prompt, sentence, 5000 + 100 * i + 10 * m + s,
-                                      cfg=cfg, log_dir=log_dir)
-                stock[m].append(gen)
-                wall += float(gen["wall"])
+        stock, splice_wall = _retell_stock(context, ss, dropped, 5000 + 100 * i, cfg, log_dir)
+        wall += splice_wall
         _spl, splices, sents, splice_idx = splice(
             talk, src, dropped, stock, allow, vocab, float(cfg["splice_copy_max"]))
         sents, _gone = dedupe_splices(sents, splice_idx, float(cfg["dedupe_jaccard"]))

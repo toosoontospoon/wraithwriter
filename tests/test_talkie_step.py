@@ -100,3 +100,41 @@ def test_summary_math():
     assert summary["jev_sol_usd"] == 0.12
     assert summary["talkie_minutes"] == 1.5
     assert summary["minutes_per_1k_words"] == 250.0
+
+
+def test_deai_ignores_talkie_file_when_disabled_or_stale(project):
+    import copy
+    import os
+    from bookforge import config as C
+    revised = project.chapter_path("ch01", "revised")
+    talk = project.chapter_path("ch01", "talkie")
+    revised.write_text("revised\n")
+    talk.write_text("talkie\n")
+    base = copy.deepcopy(C.load_config())
+    try:
+        off = copy.deepcopy(base)
+        off.setdefault("talkie", {})["enabled"] = False
+        C.set_config(off)
+        assert project.deai_source("ch01") == revised
+        assert "talkie" not in project.best_chapter_text("ch01")
+        on = copy.deepcopy(base)
+        on.setdefault("talkie", {})["enabled"] = True
+        C.set_config(on)
+        st = revised.stat().st_mtime
+        os.utime(talk, (st + 5, st + 5))
+        assert project.deai_source("ch01") == talk
+        os.utime(talk, (st - 5, st - 5))
+        assert project.deai_source("ch01") == revised
+    finally:
+        C.set_config(base)
+
+
+def test_gen_many_keeps_job_order(monkeypatch):
+    import time as _t
+    def fake_generate(prompt, src, seed, cfg=None, log_dir=None):
+        _t.sleep(0.01 * (5 - seed))
+        return {"text": str(seed), "wall": 1.0}
+    monkeypatch.setattr(talkie, "generate", fake_generate)
+    out = R._gen_many([("p", "s", k) for k in range(5)], {"parallel": 4}, None)
+    assert [g["text"] for g in out] == ["0", "1", "2", "3", "4"]
+    assert R._wall(out, {"parallel": 4}) == 5.0 / 4
