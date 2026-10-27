@@ -111,6 +111,7 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 | `block_caps.voices` | `1500` | Per-block token cap. |
 | `scene_max_words_per_call` | `6000` | Splits a scene's beats across drafter calls. |
 | `working_chunk_words` | `500` | Stored on `BookContext`. No other reader in this tree. |
+| `prior_text` | `full` | `full` keeps recent chapter prose in the chapter pack (`pack.recent_chapters` full texts, older chapters as summaries). `summaries_plus_prev_plan` drops that prose. A call then gets summaries of every prior chapter, the previous chapter's plan (`plan.plan_file` when that file exists, otherwise the outline chapter card, scene cards, and beats), and the current chapter's plan by the same lookup plus `plan.notes_files`. The write call still gets the last `write.prior_words` (default 1500) of text already written in the current chapter. Beat planning, critique, and the write step all use this pack. A set `write.context_budget_tokens` trims after this selection. The Gemma example sets `summaries_plus_prev_plan`. |
 
 ## `brainstorm`
 
@@ -134,10 +135,16 @@ Per-tier environment overrides, applied at resolve time for roles that use a tie
 |---|---|---|
 | `require_human_seed` | `true` | Before drafting, the first scene needs a non-whitespace human seed. Non-TTY runs raise and name the path. A TTY can paste one (end with a line that is only `.`, or EOF); it is saved to the chapter seed path. Set `false` to draft with no seed. |
 | `raw_dir` | `null` | When set, the write step also writes `<raw_dir>/<chapter_id>-vN-<family>-raw.txt`. `N` is the next free version (`v1`, then `v2`). `family` is `gemma` when the write-role model id contains `gemma`, otherwise a short slug. Same flag as `bookforge run --raw-dir`. |
+| `beat_by_beat` | `false` | One write call per beat group. The Hugging Face Gemma write tier turns this on even when the flag is false. Other tiers stay on `context.scene_max_words_per_call` until the flag is true. |
+| `beats_per_call` | `1` | Beats in one call when beat-by-beat is on. `2` drafts a pair. Any other value is treated as `1`. |
+| `context_budget_tokens` | `null` | Unset keeps today's write prompt. When set, the prompt is rebuilt in priority order and trimmed from the bottom until `prompt_token_estimate` fits: (1) this call's beats and the scene card, (2) voice sheets for `characters_present`, (3) continuity and facts for entities in the scene, (4) the last `prior_words` of text so far, (5) older chapters as summaries and a condensed style bible. If beats, the card, and the facts block still do not fit, one plan-role call condenses the facts block and that text is reused for the scene. Each LLM call logs `prompt_tokens_est` beside `prompt_tokens`. The Gemma example sets this to `24000`. |
+| `prior_words` | `1500` | Words of prior prose kept when a budget is set: the current scene so far, otherwise the previous chapter tail. |
 
 Seed path: `<project>/manuscript/<chapter_id>/human_seed.md`. It applies to the chapter's first scene. Optional per-scene override: `<project>/manuscript/<chapter_id>/sceneK/human_seed.md` (`scene1` and `scene01` both work). The override replaces the chapter seed for that scene.
 
-Format: plain UTF-8 markdown. Optional YAML front matter is one opening block (`---` line, YAML, closing `---` line). Only that block and the newline that ends the closer are removed. The body is not scrubbed, cleaned, or normalized. Trailing whitespace at the very end of the body is omitted at the join with the continuation. Trailing spaces earlier in the body stay. The model is told the opening is already written and must continue after it without repeating it. Scrub and clean run on the continuation only.
+Format: plain UTF-8 markdown. Optional YAML front matter is one opening block (`---` line, YAML, closing `---` line). Only that block and the newline that ends the closer are removed. The body then drops exactly one trailing end-of-line when the file has one (`\r\n` counts as one). No other character is dropped or normalized, including a trailing space on an earlier line. If the body's last non-space character is an unmatched opening quote (`"` or U+201C), the continuation is appended with nothing inserted, and the write prompt says the model is continuing inside that spoken line. Otherwise the continuation is joined with a blank line (`\n\n`). The seed is never passed through scrub, `clean_prose`, `enforce_first_line`, or protect. Only the continuation is cleaned.
+
+After each beat-by-beat call the write step runs `canon_pipeline.process_scene` with that call's `chunk` index, then a plan-role judge (JSON) asking whether the chunk does its beats and only them. A non-verdict plan reply is ignored. Drift or a missed beat is retried once with the reason in the prompt. A second failure is recorded in the step folder's `drift_report.json` and the write continues. Summarize, the scene-level canon pass, and craft still run after the beat loop.
 
 `protect.py` does not mark those paragraphs. Exact-line protection is off unless the chapter or `BOOKFORGE_PROTECT_EXACT_LINES` turns it on, and `norm()` folds punctuation, so a verbatim seed cannot be registered there without also protecting unrelated `KEEP` lines. The write step puts the opening back if craft scrub or `enforce_first_line` rewrites it. Later edit and revise passes do not have a seed lock. That is a known limit.
 
@@ -192,6 +199,17 @@ Format: plain UTF-8 markdown. Optional YAML front matter is one opening block (`
 | `max_new_per_scene` | `0` | `0` does not flag new names. A positive integer flags a scene that introduces more. |
 | `default_rules` | `[]` | Copied into the generated facts file. |
 | `canon` | `[]` | Extra canon lines copied into the facts bible block. |
+
+## `plan`
+
+Off unless you set a template and the file exists. Paths are relative to the project. `{chapter_id}` is replaced (for example `ch01`).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `plan_file` | `null` | One path template, such as `book1/{chapter_id}-plan.txt`. When the file exists, its text is included in beat planning (`_plan_beats`). |
+| `notes_files` | `[]` | Path templates, such as `notes/{chapter_id}-beat_notes.md`. When those files exist, their text is included too, with the instruction that notes override the plan file. |
+
+Changing either file changes the scene beat-cache key (a hash of the file bytes), so cached beats are planned again.
 
 ## `plan_sync`
 
@@ -272,11 +290,17 @@ llm:
       input: 0.48
       cache_read: 0.10
       output: 1.44
+write:
+  context_budget_tokens: 24000
+  beat_by_beat: true
+  beats_per_call: 1
+context:
+  prior_text: summaries_plus_prev_plan
 talkie:
   enabled: false
 ```
 
-Gemma context is 32k tokens. USD per 1M: input 0.48, cached (cache read) 0.10, output 1.44. No reasoning body is sent to that model.
+Gemma context is 32k tokens. USD per 1M: input 0.48, cached (cache read) 0.10, output 1.44. No reasoning body is sent to that model. The example write block above is the Gemma drafter: a 24000-token context budget, one beat per call, and talkie left off as an opt-in fallback. Library defaults do not set that budget and do not turn `beat_by_beat` on.
 
 ## `talkie`
 

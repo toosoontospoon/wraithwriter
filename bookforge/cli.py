@@ -318,6 +318,31 @@ def screen_facts(project, chapter):
     click.echo(f"wrote {facts.path(ctx, chapter)}")
 
 
+@cli.group("pack")
+def pack_group():
+    """Story-pack previews. These commands do not call an LLM."""
+
+
+@pack_group.command("preview")
+@click.option("--project", required=True, type=click.Path(exists=True))
+@click.option("--chapter", required=True, help="Chapter id, for example ch03")
+@click.option("--scene", required=True, type=int, help="Scene number")
+@click.option("--role", default="write", show_default=True, help="Call to measure. write builds the drafter prompt.")
+def pack_preview(project, chapter, scene, role):
+    """Print estimated prompt tokens for one call. Does not call an LLM."""
+    from bookforge.core import pack as story_pack
+    ctx = _ctx(project)
+    if role == "write":
+        system, user = story_pack.write_prompt_for_scene(ctx, chapter, scene)
+    else:
+        ch = ctx.chapter(chapter)
+        if not ch:
+            raise click.ClickException(f"Chapter {chapter} not found")
+        system, user = story_pack.system_for(ctx, ch), story_pack.chapter_pack(ctx, ch)
+    est = story_pack.prompt_token_estimate(system + "\n\n" + user)
+    click.echo(f"prompt_tokens_est {est}")
+
+
 from bookforge.craft.cli_cmds import craft_group  # noqa: E402
 
 cli.add_command(craft_group)

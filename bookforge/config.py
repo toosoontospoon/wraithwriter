@@ -128,6 +128,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         },
         "scene_max_words_per_call": 6000,  # one call per scene
         "working_chunk_words": 500,
+        # full: recent chapter text, as recent_pack does today. summaries_plus_prev_plan
+        # replaces that text with summaries, the previous chapter's plan, and this chapter's plan.
+        "prior_text": "full",
     },
     "brainstorm": {"web_research": True},
     "canon": {
@@ -263,6 +266,10 @@ def example_config() -> Dict[str, Any]:
         elif role != "brainstorm":
             cfg["llm"]["roles"][role] = dict(flash)
     cfg["talkie"]["enabled"] = False
+    cfg["write"]["context_budget_tokens"] = 24000
+    cfg["write"]["beat_by_beat"] = True
+    cfg["write"]["beats_per_call"] = 1
+    cfg["context"]["prior_text"] = "summaries_plus_prev_plan"
     return cfg
 
 

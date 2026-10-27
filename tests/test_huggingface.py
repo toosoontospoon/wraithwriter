@@ -64,6 +64,20 @@ def test_provider_resolves_to_gemma_tier():
     assert C.resolve_role("plan") == ("openrouter", "openai/gpt-6-sol")
 
 
+def test_example_gemma_write_sets_budget_and_beats():
+    cfg = C.example_config()
+    assert cfg["llm"]["roles"]["write"] == {"tier": "gemma"}
+    assert cfg["write"]["context_budget_tokens"] == 24000
+    assert cfg["write"]["beat_by_beat"] is True
+    assert cfg["write"]["beats_per_call"] == 1
+    assert cfg["talkie"]["enabled"] is False
+    assert cfg["context"]["prior_text"] == "summaries_plus_prev_plan"
+    assert C.DEFAULT_CONFIG["context"]["prior_text"] == "full"
+    assert C.DEFAULT_CONFIG["write"]["context_budget_tokens"] is None
+    assert C.DEFAULT_CONFIG["write"]["beat_by_beat"] is False
+    assert C.DEFAULT_CONFIG["llm"]["roles"]["plan"]["tier"] == "planner"
+
+
 def test_template_points_write_at_gemma_and_other_roles_at_deepseek(tmp_path):
     path = C.write_template(tmp_path / "config.yaml")
     data = __import__("yaml").safe_load(path.read_text())

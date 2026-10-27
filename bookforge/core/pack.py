@@ -157,6 +157,58 @@ def confirmed_canon(ctx) -> str:
     return ("CONFIRMED FACTS:\n" + "\n".join(f"- {f['claim']}" for f in facts)) if facts else ""
 
 
+def prior_text_mode() -> str:
+    """``full`` (the default) keeps recent chapter text. ``summaries_plus_prev_plan`` does not."""
+    raw = (load_config().get("context") or {}).get("prior_text")
+    if str(raw or "full").strip() == "summaries_plus_prev_plan":
+        return "summaries_plus_prev_plan"
+    return "full"
+
+
+def outline_plan_card(chapter: dict) -> str:
+    """Outline chapter card, scene cards, and beats. Used when no plan file exists."""
+    lines = [f"Chapter {chapter.get('id')} '{chapter.get('title', '')}'",
+             f"Summary: {chapter.get('summary', '')}",
+             f"Ends with: {chapter.get('ends_with', '')}"]
+    for s in chapter.get("scenes") or []:
+        lines.append(
+            f"Scene {s.get('scene_number')} ({s.get('location', '')}; POV {s.get('pov', '')}): "
+            f"{s.get('summary') or s.get('action', '')}")
+        for b in s.get("beats") or []:
+            lines.append(f"- {b}")
+        present = s.get("characters_present") or []
+        if present:
+            lines.append("present: " + ", ".join(present))
+    return "\n".join(lines)
+
+
+def chapter_plan_text(ctx, chapter: dict, with_notes: bool = False) -> str:
+    """Plan file when it exists, otherwise the outline card. Notes only for the current chapter."""
+    plan_text, notes_text, _digest = chapter_plan_sources(ctx, chapter.get("id"))
+    body = plan_text.strip() or outline_plan_card(chapter)
+    if with_notes and notes_text.strip():
+        body += ("\n\nAUTHOR NOTES (these notes override the plan file when they disagree):\n"
+                 + notes_text.strip())
+    return body
+
+
+def prior_chapter_selection(ctx, chapter: dict) -> str:
+    """Summaries of every prior chapter, the previous chapter's plan, and this chapter's plan.
+
+    No full prior-chapter prose. ``recent_chapters`` text is not included.
+    """
+    cid = chapter.get("id", "")
+    prior = [ch for ch in ctx.load_outline() if ch.get("id", "") < cid]
+    s = ctx.load_summaries()
+    parts = []
+    if prior:
+        parts.append("EARLIER CHAPTERS (summaries):\n" + "\n".join(
+            f"- {ch['id']}: {(s.get('chapters') or {}).get(ch['id'], '(no summary)')}" for ch in prior))
+        parts.append("PREVIOUS CHAPTER PLAN:\n" + chapter_plan_text(ctx, prior[-1], with_notes=False))
+    parts.append("CURRENT CHAPTER PLAN:\n" + chapter_plan_text(ctx, chapter, with_notes=True))
+    return "\n\n".join(p for p in parts if p)
+
+
 def recent_pack(ctx, chapter_id: str) -> str:
     c = cfg()
     prior = [ch["id"] for ch in ctx.load_outline() if ch["id"] < chapter_id]
@@ -235,7 +287,9 @@ def chapter_pack(ctx, chapter: dict) -> str:
     planner, writer, critic, checkers, editor). Ends with a cache break; call-specific text follows."""
     from bookforge.core.llm import CACHE_BREAK
     names = speakers(ctx, chapter)
-    blocks = [world_block(ctx, chapter), recent_pack(ctx, chapter["id"]),
+    recent = (prior_chapter_selection(ctx, chapter) if prior_text_mode() == "summaries_plus_prev_plan"
+              else recent_pack(ctx, chapter["id"]))
+    blocks = [world_block(ctx, chapter), recent,
               characters_block(ctx, names, notes=False), voices(ctx, names)]
     body = "\n\n".join(b for b in blocks if b)
     return (body + CACHE_BREAK) if body else ""
@@ -429,12 +483,15 @@ def names_present(scene: dict) -> list[str]:
 
 def older_chapter_block(ctx, chapter: dict) -> str:
     """Summaries of prior chapters, plus a short style-bible head. No full chapter text."""
-    prior = [ch["id"] for ch in ctx.load_outline() if ch["id"] < chapter.get("id", "")]
-    s = ctx.load_summaries()
     parts = []
-    if prior:
-        parts.append("EARLIER CHAPTERS (summaries):\n" + "\n".join(
-            f"- {pid}: {(s.get('chapters') or {}).get(pid, '(no summary)')}" for pid in prior))
+    if prior_text_mode() == "summaries_plus_prev_plan":
+        parts.append(prior_chapter_selection(ctx, chapter))
+    else:
+        prior = [ch["id"] for ch in ctx.load_outline() if ch["id"] < chapter.get("id", "")]
+        s = ctx.load_summaries()
+        if prior:
+            parts.append("EARLIER CHAPTERS (summaries):\n" + "\n".join(
+                f"- {pid}: {(s.get('chapters') or {}).get(pid, '(no summary)')}" for pid in prior))
     sb = ctx.style()
     root = getattr(sb, "root", None)
     if root and (Path(root) / "style_bible.md").exists():
@@ -527,7 +584,11 @@ def _build_write_budgeted(ctx, chapter, scene, beats, so_far, ceiling_words, par
     ])
     voice = voices(ctx, names_present(scene))
     facts = continuity_facts_block(ctx, scene)
-    tail = prior_tail(ctx, chapter, so_far)
+    if prior_text_mode() == "summaries_plus_prev_plan":
+        # Current-chapter prose only. Prior chapters are summaries and a plan, not their text.
+        tail = last_words(so_far, prior_word_count()) if so_far and so_far.strip() else ""
+    else:
+        tail = prior_tail(ctx, chapter, so_far)
     prior = ("PRIOR TEXT (the last words already written; continue from the end, do not repeat them):\n" + tail) if tail else ""
     blocks = [("mandatory", mandatory), ("voices", voice), ("facts", facts), ("prior", prior),
               ("summaries", older_chapter_block(ctx, chapter))]
@@ -548,12 +609,15 @@ def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, 
     from the bottom. Unset keeps this path.
     """
     budget = context_budget_tokens()
+    if prior_text_mode() == "summaries_plus_prev_plan":
+        so_far = last_words(so_far, prior_word_count()) if so_far and so_far.strip() else ""
     if budget:
         return _build_write_budgeted(ctx, chapter, scene, beats, so_far, ceiling_words, part, parts, budget)
     from bookforge.core import threads
+    shown = so_far.strip() or "(nothing yet: this is the chapter's opening)"
     blocks = [chapter_plan_block(chapter, scene), notes_block(ctx, chapter, scene),
               "CHAPTER SO FAR (everything already written in this chapter; continue from its last line):\n"
-              + (so_far.strip() or "(nothing yet: this is the chapter's opening)")]
+              + shown]
     card = {k: scene.get(k) for k in ("scene_number", "pov", "location", "time", "characters_present",
                                        "purpose", "conflict", "sensory_anchor", "closing_image") if scene.get(k)}
     blocks.append("SCENE CARD: " + json.dumps(card))
@@ -573,6 +637,26 @@ def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, 
                   "(names, places, who knows what, objects, injuries, time of day) and fix any slip. "
                   "Output ONLY the prose.")
     return system_for(ctx, chapter), chapter_pack(ctx, chapter) + "\n\n".join(b for b in blocks if b)
+
+
+def write_prompt_for_scene(ctx, chapter_id: str, scene_number: int) -> tuple[str, str]:
+    """The write prompt ``write_scene`` would build for this scene. No LLM call."""
+    chapter = ctx.chapter(chapter_id)
+    if not chapter:
+        raise ValueError(f"Chapter {chapter_id} not found")
+    scene = next((s for s in chapter.get("scenes") or [] if int(s.get("scene_number", 0)) == int(scene_number)), None)
+    if scene is None:
+        raise ValueError(f"Scene {scene_number} not found in {chapter_id}")
+    sp = (ctx.progress.get("scenes") or {}).get(chapter_id, {}).get(str(scene["scene_number"]), {})
+    beats = sp.get("beats") or scene.get("beats") or [scene.get("action") or "Write the scene."]
+    texts = []
+    for s in chapter.get("scenes") or []:
+        if int(s.get("scene_number", 0)) >= int(scene_number):
+            break
+        path = ctx.scene_path(chapter_id, s["scene_number"], "draft")
+        if path.exists():
+            texts.append(path.read_text())
+    return build_write(ctx, chapter, {**scene, "beats": beats}, list(beats), "\n\n".join(texts), 800)
 
 
 def fit_write_context(ctx, system: str, user: str, provider: str | None = None,
