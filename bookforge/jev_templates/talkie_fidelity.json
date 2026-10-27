@@ -1,0 +1,59 @@
+{
+  "name": "talkie_fidelity",
+  "description": "Yes/no fidelity scores for a talkie reword. Paragraph questions are batched, one set per candidate. Localise questions are one call for the chosen paragraph. Jev returns probabilities only.",
+  "model": "jev-1.13.0",
+  "paragraph": {
+    "questions": {
+      "dropped": {
+        "type": "noul",
+        "instructions": "Does `rewrites[{n}]` leave out any fact, physical detail, action, piece of spoken content, or emotional beat that is in `source`?",
+        "criteria": {
+          "true": "At least one thing stated in `source` (an object, detail, action, what someone says, or what someone feels) is absent from the rewrite.",
+          "false": "Everything stated in `source` is present in the rewrite, even if worded or ordered differently."
+        }
+      },
+      "invented": {
+        "type": "noul",
+        "instructions": "Does `rewrites[{n}]` add any person, object, action, event or circumstance that is not in `source` or `before`?",
+        "criteria": {
+          "true": "The rewrite adds something new that happens, exists or is said, which `source` does not contain.",
+          "false": "The rewrite adds nothing beyond wording, order, small connecting words, or obvious implications of `source`."
+        }
+      },
+      "contradiction": {
+        "type": "noul",
+        "instructions": "Does anything in `rewrites[{n}]` contradict `source`, i.e. state the opposite or a different version of a fact (e.g. silent where source says creaking, seen where source says unseen)?",
+        "criteria": {
+          "true": "Some statement in the rewrite is incompatible with `source`.",
+          "false": "Nothing in the rewrite conflicts with `source`."
+        }
+      },
+      "name": {
+        "type": "noul",
+        "instructions": "Does `rewrites[{n}]` call any person or animal by a different name or title than `source`, or give an action or spoken line to a different character than `source` does?",
+        "criteria": {
+          "true": "A name is changed, or an action or line is attributed to the wrong character.",
+          "false": "Every name and every speaker or actor matches `source`."
+        }
+      }
+    }
+  },
+  "localise": {
+    "err": {
+      "type": "noul",
+      "instructions": "Look only at line s{line} of `rewrite` (other lines are context). Does line s{line} state something that is not in `source` (an invented person, object, action or event), contradict `source`, or call someone by a different name than `source`?",
+      "criteria": {
+        "true": "The line contains an invented, contradicting or misnamed element.",
+        "false": "Everything in the line is supported by `source`."
+      }
+    },
+    "miss": {
+      "type": "noul",
+      "instructions": "Look at line m{line} of `source`. Is any fact, detail, spoken content or feeling from line m{line} missing from the whole of `rewrite`?",
+      "criteria": {
+        "true": "Something from m{line} appears nowhere in `rewrite`.",
+        "false": "Everything in m{line} is present somewhere in `rewrite`."
+      }
+    }
+  }
+}
