@@ -13,7 +13,11 @@ WraithWriter is a command-line pipeline for planning, drafting and revising long
 
 It keeps a cost and usage log for every call. The Python package is `bookforge`.
 
-Stages, models, the screen, and the token scrub: [docs/pipeline.md](docs/pipeline.md). Every `DEFAULT_CONFIG` key: [docs/config.md](docs/config.md). Commands: [docs/cli.md](docs/cli.md). Structure fields: [STRUCTURE.md](STRUCTURE.md).
+Stages, models, the screen, and the token scrub: [docs/pipeline.md](docs/pipeline.md). Every `DEFAULT_CONFIG` key: [docs/config.md](docs/config.md). Commands: [docs/cli.md](docs/cli.md). Structure fields: [STRUCTURE.md](STRUCTURE.md). Experiments: [docs/experiments/README.md](docs/experiments/README.md).
+
+## Direction
+
+Current work explores base-model drafting and rewording with `talkie-1930-13b-base`, then a budgeted fact fix. That stage is in progress in its own pull request on branch `talkie-rolling`. It is not in this tree, and its config is not documented here.
 
 ## Setup
 
