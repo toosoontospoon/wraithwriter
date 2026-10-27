@@ -3,7 +3,7 @@
 WraithWriter is a command-line pipeline for planning, drafting and revising long fiction with LLMs. It runs these steps:
 
 - brainstorm
-- outline (with a structure linter)
+- outline (each chapter gets a `structure` block; lint it with `bookforge structure check`)
 - cast and world
 - per-scene drafting from a story pack (bible, continuity sheet, recent chapters, voice sheets)
 - critique
@@ -12,6 +12,8 @@ WraithWriter is a command-line pipeline for planning, drafting and revising long
 - canon extraction and continuity tracking
 
 It keeps a cost and usage log for every call. The Python package is `bookforge`.
+
+Stages, models, the screen, and the token scrub: [docs/pipeline.md](docs/pipeline.md). Every `DEFAULT_CONFIG` key: [docs/config.md](docs/config.md). Commands: [docs/cli.md](docs/cli.md). Structure fields: [STRUCTURE.md](STRUCTURE.md).
 
 ## Setup
 
@@ -88,85 +90,23 @@ bookforge structure check --project projects/myproject
 
 `bookforge cost` reports `<project>/state/usage.jsonl` (default grouping: chapter). `bookforge costs` totals `<project>/costs.jsonl` by role. Set `llm.budget_usd` to stop before the next call once spend reaches the cap. The default is no cap. The process does not complete a leftover scene after the cap or after an out-of-credit HTTP error. Those errors surface as `BudgetExceeded` or `LLMError`.
 
-## The revision gate: code checks first, then Jev, then the expensive editor
+## Screen, structure, de-AI
 
-The full-context editor pass is the costliest call in the pipeline. `screen.enabled` defaults to true, so `revise` screens each draft first and the editor reads a compact revision packet instead of the whole chapter plus the story pack. Set `screen.enabled: false` to send the whole chapter.
+`screen.enabled` defaults to true. `revise` runs free code checks, then one Jev call per section on the pinned model `jev-1.13.0`, then sends the editor a packet of flagged sections. The editor call is skipped only when nothing is flagged and there are no chapter-level findings (`screen.skip_edit_if_clean`, default true). A missing `TYPESAFE_API_KEY` skips Jev and keeps the code checks.
 
-1. **Code checks (free)** run first for anything rule-checkable (`bookforge/core/screen_checks.py`):
-   - clock times against the bible's schedule
-   - which subject is taught in which session
-   - afternoon-only activities
-   - narration of a non-POV character's thoughts
-   - new named people per scene
-   - dialogue-line extraction for count rules such as "X answers only once"
-
-   Regex checks for AI tells (rule of three, mirrored lines, epigram closers) only propose candidates.
-2. **Jev** (TypeSafe System One, pinned to `jev-1.13.0`) makes one call per section. It only scores a fixed template of yes/no and choice questions against unstructured text: session-content conflicts, POV head-hops, mirrored lines, rule-of-three, tidy closers, age-appropriateness, and which planned beat the section shows. With `screen.deai_questions` (default true) that same call also asks six de-AI questions: packed noun, hedge stack, soft contrast, unclear agency, polished intro (first section of a scene only), and parallel-list ending (last section only). It also answers one yes/no per code-extracted line for each count rule, and code does the counting. Each question has its own threshold (`bookforge/jev_templates/chapter_section_screen.json`). A code candidate lowers the de-AI bars from 0.5 to 0.4. Jev never writes text. Calls are logged with their model, tokens and cost. Structural candidates (rule of three, mirrored lines, epigram closers, polished intro, parallel-list ending) are kept only when Jev agrees. If Jev is skipped, severity 2 and higher code hits stay.
-3. **Revision packet** (`bookforge/core/screen.py`). It contains:
-   - the flagged sections
-   - the bible and plan lines that govern each flag
-   - critique and canon findings, mapped to their sections
-   - a beat map of the whole chapter
-
-   The editor (`editor.edit_packet`) returns only the flagged sections. Code splices them back in, with length guards. If nothing is flagged, the editor call is skipped.
-4. **Facts file**. Each chapter gets a `<chapter>-facts.json` next to its plan. It is generated from the outline, the characters, the bible timetable and the `screen` config. Keys you list in `_manual` (for example `count_rules`) are kept when the file is regenerated.
-
-**Fallbacks.** If `TYPESAFE_API_KEY` is missing or the API errors, Jev is skipped, the code checks still run, and the packet is marked accordingly. A malformed editor reply falls back to the full-chapter edit.
-
-Configuration (all optional):
-
-```yaml
-screen:
-  enabled: true
-  model: jev-1.13.0
-  section_words: 600
-  cap_usd: 1.0             # Jev spend cap per project
-  skip_edit_if_clean: true
-  fallback_full_edit: true
-  facts_dir: plans         # where <chapter>-facts.json lives
-  timetable_file: bible/schedule.txt
-  max_new_per_scene: 2
-```
-
-To try it without calling the editor:
+Timetable, session-subject, and afternoon-only checks do nothing until `screen.timetable_file`, `screen.subjects`, `screen.session_subjects`, or `screen.afternoon_only` is set. Those default empty. `screen.facts_dir` defaults empty, which writes `<chapter>-facts.json` under `state/facts/` (or `<bible>/book<N>/` when that directory exists), not under `plans/`. `screen.max_new_per_scene` defaults to 0, which records new names and does not flag them.
 
 ```bash
 bookforge screen facts --project projects/myproject --chapter ch01
 bookforge screen run   --project projects/myproject --chapter ch01 --no-jev
+bookforge structure check --project projects/myproject
 ```
 
-`screen run` writes `revision_packet.md` and `screen_estimate.json` under a new `steps/` folder. It never calls the editor. `--no-jev` is optional. `--text` reads a file instead of the draft.
+`structure check` exits 1 on a missing `plot_function`, a `value_turn` that does not change, or a `plot_function` that duplicates a neighbour. `structure show` and `structure percent --write` are in [STRUCTURE.md](STRUCTURE.md).
 
-On a 9,700-word test chapter, the packet cut editor input from about 62k to about 17.6k tokens (72% less). Jev cost under half a cent per chapter.
+The de-AI step scrubs with fiction mode inside `bookforge/style/vendor/token_scrub/scrub.py`, loaded by `bookforge.core.deai.scrub`. There is no separate fiction-safe script. The file's own CLI defaults to `--mode prose`. `deai.rewrite_residual` defaults to false, so that step adds no LLM call. `deai.external_detector.provider` defaults to `none`. `pangram` does not call the network in this tree: a missing key is `skipped: no key`, and a set key is `skipped: not implemented`.
 
-## De-AI rules
-
-Fiction narration follows the style bible. That voice wins over any email register, and banned words and fragments are allowed inside quoted dialogue. The narrator does not get a "human slip" texture rule.
-
-Where the rules live:
-
-- `bookforge/style/deai_rules.md` is the short fiction list.
-- `bookforge/style/vendor/de-ai-revision/rules_extract.md` is the vendored banlist, packed-noun, and sentence-rule extract.
-- `bookforge/style/generated/deai_skill_banlist.txt` is generated from that extract.
-- `bookforge/style/ai_tells.yaml` is the detector catalog, including `polished_intro` and `parallel_list_ending`.
-
-`deai.rules_text()` joins the fiction list, the vendored extract, and a short fiction note. Writer and screen system prompts get a compact `PROSE RULES` block from `deai.prose_rules_block()`. The block is byte-stable for a book so it can sit in the cached prefix. `deai.prompt_rules` (default true) turns it off when false.
-
-Sync the vendored extract and the banlist with `python tools/sync_style_rules.py`. The skill file it reads stays outside this public repo. `--check` rebuilds the banlist from the extract already in the tree and does not need that skill file.
-
-Flags:
-
-| Flag | Default | What it does |
-|---|---|---|
-| `deai.prompt_rules` | true | Put `PROSE RULES` in `pack.system_for` and `screen.lean_system` |
-| `deai.min_severity` | 2 | Detector and lint hits sent to the editor |
-| `deai.max_findings` | 40 | Cap on those located findings |
-| `deai.edit_guard` | `section` | In a revision packet, revert a section whose detector score drops by more than `deai.max_tell_drop`. On a full-chapter edit, warn in the editor report. `off` disables both |
-| `deai.max_tell_drop` | 0.5 | How far the 0-10 detector score may fall before the guard acts |
-| `deai.rewrite_residual` | false | After the editor, rewrite paragraphs that still have a severity >= 2 narration hit, then re-scrub. The duties-gate rollback still applies. Off adds no LLM call |
-| `deai.external_detector` | `provider: none` | Report-only hook after the final scrub. `pangram` reads the env var named by `api_key_env` (default `PANGRAM_API_KEY`) and records `skipped: no key` when it is unset. It never edits the chapter and never logs the key |
-| `screen.enabled` | true | Code checks still run without `TYPESAFE_API_KEY`. Jev is skipped cleanly |
-| `screen.deai_questions` | true | The six de-AI questions on the existing per-section Jev call |
+Prompt caching is on (`llm.cache.enabled`, default true). `llm.budget_usd` is the only spend stop, and it defaults to no cap. Detail is in [docs/pipeline.md](docs/pipeline.md) and [docs/config.md](docs/config.md).
 
 ## License
 
