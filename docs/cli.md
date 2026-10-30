@@ -25,7 +25,7 @@ Creates a project directory and `metadata.json` (`prompt`, `created`, `no_resear
 
 ```
 bookforge run --project DIR [--step NAME] [--from A --to B] [--restart-from NAME]
-              [--chapter ch03] [--force] [--edit-effort low|medium|high]
+              [--chapter ch03] [--force] [--edit-effort low|medium|high] [--raw-dir DIR]
 ```
 
 `--project` must already exist.
@@ -38,6 +38,15 @@ bookforge run --project DIR [--step NAME] [--from A --to B] [--restart-from NAME
 | `--chapter` | Chapter id, for example `ch03`. Without it, `write`, `critique`, `revise`, and `deai` run for every outline chapter that is missing or stale. |
 | `--force` | On `--step all`, rerun steps that are already current. `finalize` is still called without `force`, so a missing or failed audit still stops it. On a chapter step with no `--chapter`, rerun chapters that are already current. On `--step finalize`, pass `force` into that step: unfinished chapters and a failed or missing audit are allowed. A single named step other than `finalize` always runs, so `--force` changes nothing there. `--force` is not applied to a `--from`/`--to` range. |
 | `--edit-effort` | Sets `BOOKFORGE_EDITOR_REASONING_EFFORT` for this process (`low`, `medium`, or `high`). |
+| `--raw-dir` | Write step only. Also writes `<DIR>/<chapter_id>-vN-<family>-raw.txt`: human-seed prefix plus raw unscrubbed continuations, scene breaks as in `join_scenes`. `N` is the next free version (`v1`, then `v2`). Family is `gemma` when the write-role model contains `gemma`, else a short slug. `write.raw_dir` is the same setting. |
+
+```
+bookforge run --project P --step write --chapter ch13 --raw-dir DIR
+```
+
+`bookforge pack preview --project DIR --chapter chNN --scene K --role write` prints `prompt_tokens_est` for the prompt that call would send, plus `with_filter` and `without_filter`: that same prompt with the chapter-cast filter forced on and off. It does not call an LLM. A write budget that leaves `characters.md` out of the prompt makes those three sizes match. With `context.prior_text: summaries_plus_prev_plan` that prompt has prior-chapter summaries and plans instead of prior-chapter prose, plus the last `write.prior_words` of the current chapter, and the system pack keeps only the chapter cast from `characters.md`.
+
+The seed body is the file after optional YAML front matter, minus one trailing end-of-line. An unmatched opening quote at the end of that body is continued with no inserted whitespace. The Gemma write tier (or `write.beat_by_beat`) drafts one beat group per call (`write.beats_per_call`, default 1) and records a second drift miss in `drift_report.json`. `write.context_budget_tokens` trims that prompt; the usage row includes `prompt_tokens_est`. `plan.plan_file` and `plan.notes_files` are optional beat-planning inputs (notes override the plan file) and are off by default.
 
 `all` runs each stale step through `finalize`: the three book steps, then `write` → `critique` → `revise` → `deai` per chapter, then `audit` and `finalize`. Up-to-date steps are skipped unless `--force` is set.
 
@@ -77,7 +86,7 @@ There is no separate credit-check command. A missing API key raises `Missing API
 bookforge config-init
 ```
 
-Writes `DEFAULT_CONFIG` as YAML to `$BOOKFORGE_CONFIG` if that variable is set, otherwise to `~/.bookforge/config.yaml`. The write happens only when the file is missing. The command prints `Wrote <path>` either way. Keys stay in the environment. A present file is deep-merged over the defaults at load time.
+Writes the key-free user template (`example_config()` in `bookforge/config.py`) as YAML to `$BOOKFORGE_CONFIG` if that variable is set, otherwise to `~/.bookforge/config.yaml`. The write happens only when the file is missing. The command prints `Wrote <path>` either way. Keys stay in the environment. A present file is deep-merged over the library defaults at load time. Library defaults stay on Sol/Gemini. The template points `write` and `rerank` at Gemma on the Hugging Face router and the other generative roles at `deepseek/deepseek-v4.1-flash-1017`, with `talkie.enabled: false`. See [config.md](config.md).
 
 ## `screen`
 

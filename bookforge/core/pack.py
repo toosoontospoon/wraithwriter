@@ -12,7 +12,9 @@ only facts a human marked confirmed are. The bible and real text are the source 
 from __future__ import annotations
 
 import json
+import math
 import re
+import sys
 from pathlib import Path
 
 from bookforge.config import load_config
@@ -129,7 +131,97 @@ def _world_relevant(text: str, chapter: dict, budget: int) -> str:
     return truncate_tokens("\n".join(out), budget)
 
 
-def stable_pack(ctx, chapter: dict) -> str:
+def character_filter_enabled(force=None) -> bool:
+    """Limit ``characters.md`` to the chapter cast. The prior-text mode turns this on."""
+    if force is not None:
+        return bool(force)
+    ctx_cfg = load_config().get("context") or {}
+    if str(ctx_cfg.get("characters") or "") == "chapter_cast":
+        return True
+    return prior_text_mode() == "summaries_plus_prev_plan"
+
+
+def _entry_labels(title: str, body: str) -> list[str]:
+    labels = [title] if title else []
+    for line in body.splitlines():
+        m = re.match(r"(?i)\s*aliases?\s*:\s*(.+)$", line)
+        if m:
+            labels.extend(x.strip() for x in re.split(r"[,;]", m.group(1)) if x.strip())
+    return labels
+
+
+_HONORIFICS = {"lord", "lady", "sir", "dame", "mr", "mr.", "mrs", "mrs.", "miss", "master", "mistress",
+               "dr", "dr.", "doctor", "father", "brother", "sister", "the", "old", "young", "captain"}
+
+
+def _first_name(s: str) -> str:
+    words = [w for w in s.lower().split() if w not in _HONORIFICS]
+    return words[0] if words else ""
+
+
+def _label_hit(wanted: str, labels: list[str]) -> bool:
+    w = (wanted or "").lower().strip()
+    if not w:
+        return False
+    wfirst = _first_name(w)
+    for lab in labels:
+        low = lab.lower().strip()
+        if not low:
+            continue
+        lfirst = _first_name(low)
+        if w == low or (wfirst and wfirst == lfirst) or (wfirst and wfirst == low) or (lfirst and w == lfirst):
+            return True
+    return False
+
+
+def _word_in(phrase: str, blob: str) -> bool:
+    """True when ``phrase`` appears as whole words, not inside a longer word."""
+    low = phrase.lower().strip()
+    if not low:
+        return False
+    return re.search(rf"(?<![a-z0-9]){re.escape(low)}(?![a-z0-9])", blob) is not None
+
+
+def _label_in_blob(label: str, blob: str) -> bool:
+    low = label.lower().strip()
+    if not low:
+        return False
+    if _word_in(low, blob):
+        return True
+    first = _first_name(low)
+    if not first or first == low:
+        return False
+    return _word_in(first, blob)
+
+
+def filter_characters_markdown(ctx, chapter: dict, text: str) -> str:
+    """Keep entries for this chapter's cast. Headings, aliases, and first names all count."""
+    parts = re.split(r"(?m)^(#{1,3} .+)$", text)
+    if len(parts) < 3:
+        return text
+    wanted = []
+    for scene in chapter.get("scenes") or []:
+        if scene.get("pov"):
+            wanted.append(scene["pov"])
+        wanted.extend(scene.get("characters_present") or [])
+    for name in (load_config().get("context") or {}).get("always_characters") or []:
+        wanted.append(name)
+    plan_text, notes_text, _digest = chapter_plan_sources(ctx, chapter.get("id", ""))
+    blob = (plan_text + "\n" + notes_text + "\n" + outline_plan_card(chapter)).lower()
+    kept = []
+    for i in range(1, len(parts), 2):
+        heading = parts[i]
+        body = parts[i + 1] if i + 1 < len(parts) else ""
+        title = re.sub(r"^#+\s*", "", heading).strip()
+        labels = _entry_labels(title, body)
+        if any(_label_hit(w, labels) for w in wanted) or any(_label_in_blob(lab, blob) for lab in labels):
+            kept.append((heading + body).strip())
+    preamble = parts[0].strip()
+    body_out = "\n\n".join(kept)
+    return (preamble + "\n\n" + body_out).strip() if preamble else body_out
+
+
+def stable_pack(ctx, chapter: dict, character_filter=None) -> str:
     c = cfg()
     d = bible_dir(ctx)
     if not c["enabled"] or not d:
@@ -138,7 +230,11 @@ def stable_pack(ctx, chapter: dict) -> str:
     for name in c["files"]:
         p = d / name
         if p.exists():
-            blocks.append(f"===== {name} =====\n{p.read_text().strip()}")
+            text = p.read_text().strip()
+            if (name == "characters.md" and chapter.get("id")
+                    and character_filter_enabled(character_filter)):
+                text = filter_characters_markdown(ctx, chapter, text).strip()
+            blocks.append(f"===== {name} =====\n{text}")
     bs = _beat_sheet(d, c)
     if bs:
         blocks.append(f"===== {bs.name} (beat sheet; the plan for later chapters may change) =====\n{bs.read_text().strip()}")
@@ -153,6 +249,58 @@ def confirmed_canon(ctx) -> str:
     facts = [f for f in ctx.canon().facts.values()
              if f.get("status") == "established" and f.get("confirmed")]
     return ("CONFIRMED FACTS:\n" + "\n".join(f"- {f['claim']}" for f in facts)) if facts else ""
+
+
+def prior_text_mode() -> str:
+    """``full`` (the default) keeps recent chapter text. ``summaries_plus_prev_plan`` does not."""
+    raw = (load_config().get("context") or {}).get("prior_text")
+    if str(raw or "full").strip() == "summaries_plus_prev_plan":
+        return "summaries_plus_prev_plan"
+    return "full"
+
+
+def outline_plan_card(chapter: dict) -> str:
+    """Outline chapter card, scene cards, and beats. Used when no plan file exists."""
+    lines = [f"Chapter {chapter.get('id')} '{chapter.get('title', '')}'",
+             f"Summary: {chapter.get('summary', '')}",
+             f"Ends with: {chapter.get('ends_with', '')}"]
+    for s in chapter.get("scenes") or []:
+        lines.append(
+            f"Scene {s.get('scene_number')} ({s.get('location', '')}; POV {s.get('pov', '')}): "
+            f"{s.get('summary') or s.get('action', '')}")
+        for b in s.get("beats") or []:
+            lines.append(f"- {b}")
+        present = s.get("characters_present") or []
+        if present:
+            lines.append("present: " + ", ".join(present))
+    return "\n".join(lines)
+
+
+def chapter_plan_text(ctx, chapter: dict, with_notes: bool = False) -> str:
+    """Plan file when it exists, otherwise the outline card. Notes only for the current chapter."""
+    plan_text, notes_text, _digest = chapter_plan_sources(ctx, chapter.get("id"))
+    body = plan_text.strip() or outline_plan_card(chapter)
+    if with_notes and notes_text.strip():
+        body += ("\n\nAUTHOR NOTES (these notes override the plan file when they disagree):\n"
+                 + notes_text.strip())
+    return body
+
+
+def prior_chapter_selection(ctx, chapter: dict) -> str:
+    """Summaries of every prior chapter, the previous chapter's plan, and this chapter's plan.
+
+    No full prior-chapter prose. ``recent_chapters`` text is not included.
+    """
+    cid = chapter.get("id", "")
+    prior = [ch for ch in ctx.load_outline() if ch.get("id", "") < cid]
+    s = ctx.load_summaries()
+    parts = []
+    if prior:
+        parts.append("EARLIER CHAPTERS (summaries):\n" + "\n".join(
+            f"- {ch['id']}: {(s.get('chapters') or {}).get(ch['id'], '(no summary)')}" for ch in prior))
+        parts.append("PREVIOUS CHAPTER PLAN:\n" + chapter_plan_text(ctx, prior[-1], with_notes=False))
+    parts.append("CURRENT CHAPTER PLAN:\n" + chapter_plan_text(ctx, chapter, with_notes=True))
+    return "\n\n".join(p for p in parts if p)
 
 
 def recent_pack(ctx, chapter_id: str) -> str:
@@ -233,7 +381,9 @@ def chapter_pack(ctx, chapter: dict) -> str:
     planner, writer, critic, checkers, editor). Ends with a cache break; call-specific text follows."""
     from bookforge.core.llm import CACHE_BREAK
     names = speakers(ctx, chapter)
-    blocks = [world_block(ctx, chapter), recent_pack(ctx, chapter["id"]),
+    recent = (prior_chapter_selection(ctx, chapter) if prior_text_mode() == "summaries_plus_prev_plan"
+              else recent_pack(ctx, chapter["id"]))
+    blocks = [world_block(ctx, chapter), recent,
               characters_block(ctx, names, notes=False), voices(ctx, names)]
     body = "\n\n".join(b for b in blocks if b)
     return (body + CACHE_BREAK) if body else ""
@@ -260,14 +410,66 @@ PERSONA = ("You are the author and editorial team of an novel described in the s
            "pack as the source of truth.")
 
 
-def system_for(ctx, chapter: dict | None = None) -> str:
-    """ONE system prompt for every call type and every chapter (byte-identical, so it caches book-wide):
-    persona, rule card, prose rules, the human bible files, confirmed facts.
-    Nothing chapter- or call-specific. The prose-rules block is a constant when the flag is on."""
+def system_for(ctx, chapter: dict | None = None, character_filter=None) -> str:
+    """Persona, rule card, prose rules, the human bible files, confirmed facts.
+
+    With the character filter off this is byte-identical for every chapter. The filter,
+    when ``context.characters`` is ``chapter_cast`` or ``context.prior_text`` is
+    ``summaries_plus_prev_plan``, keeps only this chapter's cast from ``characters.md``.
+    """
     from bookforge.core.deai import prose_rules_block
-    sp = stable_pack(ctx, chapter or {})
+    sp = stable_pack(ctx, chapter or {}, character_filter=character_filter)
     cc = confirmed_canon(ctx)
     return "\n\n".join(x for x in (PERSONA, RULE_CARD, prose_rules_block(), sp, cc) if x)
+
+
+def chapter_plan_sources(ctx, chapter_id: str) -> tuple[str, str, str]:
+    """(plan text, notes text, sha256 of the file bytes). Missing files contribute nothing."""
+    import hashlib
+    cfg = load_config().get("plan") or {}
+    template = cfg.get("plan_file") or ""
+    notes = cfg.get("notes_files") or []
+    if isinstance(notes, str):
+        notes = [notes]
+    root = Path(ctx.project_dir)
+
+    def read(tmpl: str) -> tuple[str, bytes]:
+        if not tmpl:
+            return "", b""
+        try:
+            rel = str(tmpl).format(chapter_id=chapter_id)
+        except (KeyError, IndexError, ValueError):
+            return "", b""
+        path = root / rel
+        if not path.is_file():
+            return "", b""
+        data = path.read_bytes()
+        return data.decode("utf-8"), data
+
+    plan_text, plan_bytes = read(template)
+    note_parts, note_blobs = [], []
+    for tmpl in notes:
+        text, data = read(tmpl)
+        if data:
+            note_parts.append(text)
+            note_blobs.append(data)
+    digest = hashlib.sha256()
+    digest.update(plan_bytes)
+    for blob in note_blobs:
+        digest.update(b"\0")
+        digest.update(blob)
+    return plan_text, "\n\n".join(note_parts), digest.hexdigest()
+
+
+def author_plan_block(ctx, chapter_id: str) -> str:
+    """Plan file and notes for beat planning. Empty when the keys are unset or the files are missing."""
+    plan_text, notes_text, _digest = chapter_plan_sources(ctx, chapter_id)
+    parts = []
+    if plan_text.strip():
+        parts.append("AUTHOR PLAN FILE:\n" + plan_text.strip())
+    if notes_text.strip():
+        parts.append("AUTHOR NOTES (these notes override the plan file when they disagree):\n" + notes_text.strip())
+    return "\n\n".join(parts)
 
 
 def notes_block(ctx, chapter: dict, scene: dict | None = None) -> str:
@@ -283,14 +485,260 @@ def notes_block(ctx, chapter: dict, scene: dict | None = None) -> str:
     return ("EXTRACTED NOTES (machine-made; the story pack wins):\n" + "\n".join(rows)) if rows else ""
 
 
+def prompt_token_estimate(text: str) -> int:
+    """Token estimate shared by the budget trim, the usage row, and pack preview.
+
+    Uses the in-repo counter when tiktoken is already loaded. Otherwise ``len/3.5``.
+    Does not import or download a tokenizer.
+    """
+    if not text:
+        return 0
+    if "tiktoken" in sys.modules:
+        from bookforge.core.context import count_tokens
+        return max(1, count_tokens(text))
+    return max(1, math.ceil(len(text) / 3.5))
+
+
+def context_budget_tokens():
+    """Write-prompt budget, or None when today's untrimmed prompt should be used."""
+    raw = (load_config().get("write") or {}).get("context_budget_tokens")
+    if raw is None or raw == "":
+        return None
+    try:
+        n = int(raw)
+    except (TypeError, ValueError):
+        return None
+    return n if n > 0 else None
+
+
+def prior_word_count() -> int:
+    try:
+        n = int((load_config().get("write") or {}).get("prior_words") or 1500)
+    except (TypeError, ValueError):
+        return 1500
+    return n if n > 0 else 1500
+
+
+def last_words(text: str, n: int) -> str:
+    words = (text or "").split()
+    if len(words) <= n:
+        return (text or "").strip()
+    return " ".join(words[-n:])
+
+
+def prior_tail(ctx, chapter: dict, so_far: str, n: int | None = None) -> str:
+    """Last ``n`` words of this chapter so far, else of the previous chapter."""
+    n = prior_word_count() if n is None else n
+    if so_far and so_far.strip():
+        return last_words(so_far, n)
+    prior = [ch["id"] for ch in ctx.load_outline() if ch["id"] < chapter.get("id", "")]
+    if not prior:
+        return ""
+    return last_words(ctx.best_chapter_text(prior[-1]), n)
+
+
+def _scene_entity_ids(ctx, scene: dict) -> list[str]:
+    from bookforge.core.schema import slugify
+    names = list(scene.get("characters_present") or [])
+    chars = ctx.load_characters()
+    ids = []
+    for n in names:
+        c = match_character(chars, n)
+        ids.append(slugify((c or {}).get("id") or (c or {}).get("name") or n))
+    return list(dict.fromkeys(i for i in ids if i))
+
+
+def continuity_facts_block(ctx, scene: dict) -> str:
+    """Continuity and facts for entities present in this scene."""
+    ids = _scene_entity_ids(ctx, scene)
+    canon = ctx.canon()
+    lines = []
+    cont = canon.continuity_for(ids) if ids else {}
+    if cont:
+        lines.append("CONTINUITY:\n" + json.dumps(cont))
+    facts = canon.facts_for(ids) if ids else []
+    if facts:
+        lines.append("FACTS:\n" + "\n".join(f"- {f.get('claim', '')}" for f in facts))
+    d = bible_dir(ctx)
+    if d and (d / "continuity.md").exists() and names_present(scene):
+        wanted = {n.lower() for n in names_present(scene)}
+        kept = []
+        for para in (d / "continuity.md").read_text().split("\n\n"):
+            low = para.lower()
+            if any(n in low for n in wanted):
+                kept.append(para.strip())
+        if kept:
+            lines.append("CONTINUITY SHEET:\n" + "\n\n".join(kept))
+    if not lines:
+        return ""
+    return "CONTINUITY AND FACTS:\n" + "\n".join(lines)
+
+
+def names_present(scene: dict) -> list[str]:
+    return [n for n in (scene.get("characters_present") or []) if n]
+
+
+def older_chapter_block(ctx, chapter: dict) -> str:
+    """Summaries of prior chapters, plus a short style-bible head. No full chapter text."""
+    parts = []
+    if prior_text_mode() == "summaries_plus_prev_plan":
+        parts.append(prior_chapter_selection(ctx, chapter))
+    else:
+        prior = [ch["id"] for ch in ctx.load_outline() if ch["id"] < chapter.get("id", "")]
+        s = ctx.load_summaries()
+        if prior:
+            parts.append("EARLIER CHAPTERS (summaries):\n" + "\n".join(
+                f"- {pid}: {(s.get('chapters') or {}).get(pid, '(no summary)')}" for pid in prior))
+    sb = ctx.style()
+    root = getattr(sb, "root", None)
+    if root and (Path(root) / "style_bible.md").exists():
+        words = (Path(root) / "style_bible.md").read_text().split()
+        parts.append("STYLE BIBLE (condensed):\n" + " ".join(words[:400]))
+    return "\n\n".join(parts)
+
+
+def _shrink_to_estimate(text: str, room: int) -> str:
+    if room <= 0 or not text:
+        return ""
+    if prompt_token_estimate(text) <= room:
+        return text
+    lo, hi, best = 0, len(text), ""
+    while lo <= hi:
+        mid = (lo + hi) // 2
+        chunk = text[:mid]
+        if prompt_token_estimate(chunk) <= room:
+            best = chunk
+            lo = mid + 1
+        else:
+            hi = mid - 1
+    return best
+
+
+def _facts_lines(res) -> str:
+    """Render the condenser's reply as plain bullet lines, never raw JSON."""
+    if isinstance(res, str):
+        try:
+            res = json.loads(res)
+        except ValueError:
+            return res.strip()
+    items = []
+    if isinstance(res, dict):
+        for v in res.values():
+            if isinstance(v, list):
+                items.extend(v)
+            elif isinstance(v, str):
+                items.append(v)
+    elif isinstance(res, list):
+        items = list(res)
+    return "\n".join(f"- {str(x).strip()}" for x in items if str(x).strip())
+
+
+def _condense_facts(ctx, chapter, scene, facts_text: str, room: int) -> str:
+    """One plan-role condensation per scene, reused by later write calls.
+
+    ``ctx._no_llm`` (set by ``pack preview``) skips the call and shrinks the raw facts instead.
+    """
+    key = (chapter.get("id"), scene.get("scene_number"))
+    cache = getattr(ctx, "_condensed_facts", None)
+    if cache is None:
+        cache = {}
+        ctx._condensed_facts = cache
+    if key not in cache and getattr(ctx, "_no_llm", False):
+        return _shrink_to_estimate("CONTINUITY AND FACTS (truncated for preview):\n" + facts_text, room)
+    if key not in cache:
+        card = {k: scene.get(k) for k in ("scene_number", "pov", "location", "characters_present", "purpose")
+                if scene.get(k)}
+        card["beats"] = list(scene.get("beats") or [])
+        from bookforge.core.llm import llm_call
+        res = llm_call(
+            "CONDENSE FACTS for the writer. Keep only continuity this scene still needs.\n"
+            f"SCENE CARD: {json.dumps(card)}\n"
+            f"SCENE: {scene.get('scene_number')}\n"
+            f"FACTS:\n{facts_text[:8000]}\n"
+            'Output ONLY JSON: {"facts": ["one short continuity fact per item"]}',
+            role="plan", json_mode=True, temperature=0.1, max_tokens=800)
+        cache[key] = _facts_lines(res)
+    return _shrink_to_estimate("CONTINUITY AND FACTS (condensed):\n" + cache[key], room)
+
+
+def _trim_blocks(system: str, blocks: list[tuple[str, str]], budget: int, condense) -> str:
+    """Keep blocks from the top until the estimate fits. Facts are condensed instead of dropped."""
+    def estimate(parts: list[str]) -> int:
+        body = "\n\n".join(p for p in parts if p)
+        return prompt_token_estimate(system + "\n\n" + body if body else system)
+
+    selected: list[str] = []
+    for name, text in blocks:
+        if not text:
+            continue
+        if estimate(selected + [text]) <= budget or (name == "mandatory" and not selected):
+            selected.append(text)
+            continue
+        if name == "facts":
+            room = budget - estimate(selected)
+            short = condense(text, max(0, room))
+            if short and estimate(selected + [short]) <= budget:
+                selected.append(short)
+            continue
+        break
+    return "\n\n".join(selected)
+
+
+def _budget_system(ctx, chapter) -> str:
+    """Rules only. The story pack is assembled, in priority order, in the user prompt."""
+    from bookforge.core.deai import prose_rules_block
+    return "\n\n".join(x for x in (PERSONA, RULE_CARD, prose_rules_block()) if x)
+
+
+def _build_write_budgeted(ctx, chapter, scene, beats, so_far, ceiling_words, part, parts, budget) -> tuple[str, str]:
+    """Beats and the scene card first. Lower blocks drop until the estimate fits."""
+    card = {k: scene.get(k) for k in ("scene_number", "pov", "location", "time", "characters_present",
+                                       "purpose", "conflict", "sensory_anchor", "closing_image") if scene.get(k)}
+    pp = f" (part {part} of {parts}; write only these beats)" if parts > 1 else ""
+    mandatory = "\n\n".join([
+        f"BEATS TO WRITE NOW{pp}:\n" + "\n".join(f"{i}. {b}" for i, b in enumerate(beats, 1)),
+        "SCENE CARD: " + json.dumps(card),
+        f"YOUR JOB: write part {part} of scene {scene.get('scene_number')} of chapter {chapter['id']}, "
+        "following the RULE CARD in the system prompt.",
+        "LENGTH: write each beat to completion, then stop. "
+        f"Hard ceiling: {ceiling_words} words (a limit, never a goal). Output ONLY the prose.",
+    ])
+    voice = voices(ctx, names_present(scene))
+    facts = continuity_facts_block(ctx, scene)
+    if prior_text_mode() == "summaries_plus_prev_plan":
+        # Current-chapter prose only. Prior chapters are summaries and a plan, not their text.
+        tail = last_words(so_far, prior_word_count()) if so_far and so_far.strip() else ""
+    else:
+        tail = prior_tail(ctx, chapter, so_far)
+    prior = ("PRIOR TEXT (the last words already written; continue from the end, do not repeat them):\n" + tail) if tail else ""
+    blocks = [("mandatory", mandatory), ("voices", voice), ("facts", facts), ("prior", prior),
+              ("summaries", older_chapter_block(ctx, chapter))]
+    system = _budget_system(ctx, chapter)
+
+    def condense(text, room, scene=scene):
+        return _condense_facts(ctx, chapter, scene, text, room)
+
+    return system, _trim_blocks(system, blocks, budget, condense)
+
+
 def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, ceiling_words: int,
-                part: int = 1, parts: int = 1) -> tuple[str, str]:
+                part: int = 1, parts: int = 1, character_filter=None) -> tuple[str, str]:
     """(system, user) for one scene write call. Cached prefix first (system, then the chapter pack);
-    the chapter so far, the scene's job and the length line last."""
+    the chapter so far, the scene's job and the length line last.
+
+    A set ``write.context_budget_tokens`` rebuilds that prompt in priority order and trims
+    from the bottom. Unset keeps this path.
+    """
+    budget = context_budget_tokens()
+    if prior_text_mode() == "summaries_plus_prev_plan":
+        so_far = last_words(so_far, prior_word_count()) if so_far and so_far.strip() else ""
+    if budget:
+        return _build_write_budgeted(ctx, chapter, scene, beats, so_far, ceiling_words, part, parts, budget)
     from bookforge.core import threads
+    shown = so_far.strip() or "(nothing yet: this is the chapter's opening)"
     blocks = [chapter_plan_block(chapter, scene), notes_block(ctx, chapter, scene),
               "CHAPTER SO FAR (everything already written in this chapter; continue from its last line):\n"
-              + (so_far.strip() or "(nothing yet: this is the chapter's opening)")]
+              + shown]
     card = {k: scene.get(k) for k in ("scene_number", "pov", "location", "time", "characters_present",
                                        "purpose", "conflict", "sensory_anchor", "closing_image") if scene.get(k)}
     blocks.append("SCENE CARD: " + json.dumps(card))
@@ -309,4 +757,93 @@ def build_write(ctx, chapter: dict, scene: dict, beats: list[str], so_far: str, 
                   "Before you answer, check your scene against the continuity sheet and the chapter so far "
                   "(names, places, who knows what, objects, injuries, time of day) and fix any slip. "
                   "Output ONLY the prose.")
-    return system_for(ctx, chapter), chapter_pack(ctx, chapter) + "\n\n".join(b for b in blocks if b)
+    return system_for(ctx, chapter, character_filter=character_filter), chapter_pack(ctx, chapter) + "\n\n".join(b for b in blocks if b)
+
+
+def write_prompt_for_scene(ctx, chapter_id: str, scene_number: int, character_filter=None) -> tuple[str, str]:
+    """The write prompt ``write_scene`` would build for this scene. No LLM call."""
+    chapter = ctx.chapter(chapter_id)
+    if not chapter:
+        raise ValueError(f"Chapter {chapter_id} not found")
+    scene = next((s for s in chapter.get("scenes") or [] if int(s.get("scene_number", 0)) == int(scene_number)), None)
+    if scene is None:
+        raise ValueError(f"Scene {scene_number} not found in {chapter_id}")
+    sp = (ctx.progress.get("scenes") or {}).get(chapter_id, {}).get(str(scene["scene_number"]), {})
+    beats = sp.get("beats") or scene.get("beats") or [scene.get("action") or "Write the scene."]
+    texts = []
+    for s in chapter.get("scenes") or []:
+        if int(s.get("scene_number", 0)) >= int(scene_number):
+            break
+        path = ctx.scene_path(chapter_id, s["scene_number"], "draft")
+        if path.exists():
+            texts.append(path.read_text())
+    return build_write(ctx, chapter, {**scene, "beats": beats}, list(beats), "\n\n".join(texts), 800,
+                       character_filter=character_filter)
+
+
+def preview_token_counts(ctx, chapter_id: str, scene_number: int, role: str = "write") -> tuple[int, int, int]:
+    """(prompt that would be sent, with the character filter, without it). No LLM call.
+
+    Each number is that role's real prompt. A write budget that drops ``characters.md``
+    makes the filter on and off the same size, because that call never includes the file.
+    """
+    ctx._no_llm = True
+    chapter = ctx.chapter(chapter_id)
+    if not chapter:
+        raise ValueError(f"Chapter {chapter_id} not found")
+
+    def estimate(force):
+        if role == "write":
+            system, user = write_prompt_for_scene(ctx, chapter_id, scene_number, character_filter=force)
+        else:
+            system, user = system_for(ctx, chapter, character_filter=force), chapter_pack(ctx, chapter)
+        return prompt_token_estimate(system + "\n\n" + user)
+
+    return estimate(None), estimate(True), estimate(False)
+
+
+def fit_write_context(ctx, system: str, user: str, provider: str | None = None,
+                      model: str | None = None) -> tuple[str, str]:
+    """Trim a write pack that would exceed ~24k tokens on the 32k Gemma window.
+
+    No-op for other models. Uses ``total_context_tokens`` (capped at the window's
+    prompt budget) and ``block_caps`` the same way ``BookContext._assemble`` does:
+    ``truncate_tokens`` per block, story pack from the head, continuation from the tail.
+    """
+    from bookforge.config import prompt_budget_for, resolve_role
+    from bookforge.core.context import count_tokens, truncate_tokens
+    # The priority trim already ran. A later tail shrink would drop the beats and the card.
+    if context_budget_tokens():
+        return system, user
+    if not (provider and model):
+        provider, model = resolve_role("write")
+    budget = prompt_budget_for(provider, model, getattr(ctx, "total_context_tokens", None))
+    if not budget or count_tokens(system) + count_tokens(user) <= budget:
+        return system, user
+    caps = getattr(ctx, "block_caps", None) or {}
+    user_tokens = count_tokens(user)
+    tail_floor = int(caps.get("continuity") or 2000)
+    tail_cap = min(user_tokens, max(tail_floor, budget // 3))
+    sys_cap = min(budget, max(int(caps.get("instructions") or 2000), budget - min(user_tokens, tail_cap)))
+    system = _shrink_to(system, sys_cap, "head", count_tokens, truncate_tokens)
+    remain = max(1, budget - count_tokens(system))
+    user = _shrink_to(user, remain, "tail", count_tokens, truncate_tokens)
+    return system, user
+
+
+def _shrink_to(text: str, cap: int, keep: str, count_tokens, truncate_tokens) -> str:
+    """Call truncate_tokens until the block fits. The char heuristic can undershoot a dense string."""
+    for _ in range(12):
+        if count_tokens(text) <= cap:
+            return text
+        nxt = truncate_tokens(text, max(1, cap), keep)
+        if nxt == text:
+            cap = max(1, int(cap * 0.8))
+            nxt = truncate_tokens(text, cap, keep)
+            if nxt == text:
+                # Still denser than the char estimate. Cut by characters.
+                chars = max(1, cap * 3)
+                text = ("..." + text[-chars:]) if keep == "tail" else (text[:chars] + "...")
+                continue
+        text = nxt
+    return text

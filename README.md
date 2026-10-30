@@ -5,7 +5,7 @@ WraithWriter is a command-line pipeline for planning, drafting and revising long
 - brainstorm
 - outline (each chapter gets a `structure` block; lint it with `bookforge structure check`)
 - cast and world
-- per-scene drafting from a story pack (bible, continuity sheet, recent chapters, voice sheets)
+- per-scene drafting from a story pack (bible, continuity sheet, recent chapters, voice sheets), opening on a human seed when `write.require_human_seed` is true (the default)
 - critique
 - a single editor pass
 - de-AI checks
@@ -52,6 +52,7 @@ API keys come from the variable named by each provider's `api_key_env`. No key b
 |---|---|---|
 | `XAI_API_KEY` | `llm.providers.xai` | Brainstorm role (`grok-4.7` on xAI). Not a tier, so the `BOOKFORGE_*` tier overrides do not change it. |
 | `OPENROUTER_API_KEY` | `llm.providers.openrouter` | Default provider for the planner, drafter, editor, and utility tiers. |
+| `HF_TOKEN` | `llm.providers.huggingface` | Hugging Face router. Used when `write` / `rerank` point at the Gemma tier. |
 | `ANTHROPIC_API_KEY` | `llm.providers.anthropic` | Only when a tier's provider is `anthropic`. |
 | `TYPESAFE_API_KEY` | `bookforge/core/jev.py` | Optional Jev screen. Without it, code checks still run and Jev is skipped. |
 | `PANGRAM_API_KEY` | `deai.external_detector` | Only when that block's `provider` is `pangram`. The default provider is `none`, so this variable is not read. |
@@ -61,7 +62,7 @@ API keys come from the variable named by each provider's `api_key_env`. No key b
 | `BOOKFORGE_<TIER>_REASONING_EFFORT` | `role_params` | `low`, `medium`, `high`, or `none` (omit the reasoning body). |
 | `BOOKFORGE_PROTECT_EXACT_LINES` | `protect.exact_enabled` | `1`, `true`, `yes`, or `on` turns on exact `KEEP` / `SUBTEXT` line protection. Off by default. `FACT` / `EVENT` hints stay on without it. |
 
-`bookforge config-init` writes a key-free copy of the defaults to `$BOOKFORGE_CONFIG` or `~/.bookforge/config.yaml`, and only if that file does not already exist. `bookforge run --edit-effort low|medium|high` sets `BOOKFORGE_EDITOR_REASONING_EFFORT` for that process.
+`bookforge config-init` writes a key-free user template to `$BOOKFORGE_CONFIG` or `~/.bookforge/config.yaml`, and only if that file does not already exist. Library defaults stay on `openai/gpt-6-sol` (utility `google/gemini-2.5-flash`). The template points `write` and `rerank` at Gemma on the Hugging Face router (32k context; USD per 1M input 0.48, cached 0.10, output 1.44) and the other generative roles at `deepseek/deepseek-v4.1-flash-1017`. Talkie stays disabled in that file: an opt-in fallback reword, not the default writer. Set `HF_TOKEN` for the router. `bookforge run --edit-effort low|medium|high` sets `BOOKFORGE_EDITOR_REASONING_EFFORT` for that process.
 
 Ollama is a provider with an empty `api_key_env` (`http://localhost:11434/v1`). It needs no key.
 

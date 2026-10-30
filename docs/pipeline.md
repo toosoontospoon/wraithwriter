@@ -7,7 +7,7 @@ Step order is `STEP_ORDER` in `bookforge/core/progress.py`. `bookforge run --ste
 | 1 | `brainstorm` | book | Optional web research on the xAI responses API (`brainstorm.web_research`, default true; skipped when `init --no-research` set the project), cached in `state/web_research.json` for the same premise. The search uses the xAI provider and the brainstorm model's name. Then two brainstorm-role calls: themes and genre, then an author persona. Saved on `metadata.brainstorm`. |
 | 2 | `outline` | book | Six cached phases under `state/outline_work/`: structure, cast, world, per-chapter scene expansion, assessment, then the craft plan (`state/craft/ledger.json`) when `craft.enabled` is true. Chapter ids are `ch01` onward. Length is estimated from beats and is not an input. |
 | 3 | `initialize_cast_and_world` | book | Deepens the existing cast and world (merge, does not replace ids) and seeds the canon ledger. |
-| 4 | `write` | chapter | One drafter call per beat group. Groups are split so a scene stays within `context.scene_max_words_per_call` (6000). Each scene is resumed from `progress.scenes` if that scene file already exists. Optional `craft.rerank` (default false) adds a second ending plus a judge call when tension is at least 7. |
+| 4 | `write` | chapter | One drafter call per beat group. Groups follow `context.scene_max_words_per_call` (6000) unless the write role is the Gemma tier or `write.beat_by_beat` is true, in which case each call covers `write.beats_per_call` beats (default 1, or 2) and continues from the text so far. A plan-role judge then checks that chunk; drift is retried once and otherwise flagged in `drift_report.json`. `write.context_budget_tokens` (unset by default; 24000 in the Gemma example) trims the write prompt from the bottom after beats and the scene card. With `write.require_human_seed` (default true) the first scene must open on a human seed file; the model continues after that text and does not rewrite it. Each scene is resumed from `progress.scenes` if that scene file already exists. Optional `craft.rerank` (default false) adds a second ending plus a judge call when tension is at least 7. |
 | 5 | `critique` | chapter | Deterministic checks (names, POV, AI tells), thread obligations, and craft rules, plus one planner-tier critique. Saved at `state/critiques/<id>.json`. |
 | 6 | `revise` | chapter | One editor pass. With `screen.enabled` (default true) the editor sees a revision packet. Then canon re-extraction when `canon.reextract_after_revise` is true. `voice.revoice` is not called from this step. `voice.enabled` defaults to false. |
 | 7 | `deai` | chapter | Fiction-mode token scrub and detector autofix. No LLM call unless `deai.rewrite_residual` is true. Then a duties gate (thread obligations plus craft rules) that can roll back to the autofixed draft, a final scrub, and a report-only external detector. |
@@ -15,6 +15,30 @@ Step order is `STEP_ORDER` in `bookforge/core/progress.py`. `bookforge run --ste
 | 9 | `finalize` | book | Assembles the manuscript from de-AI'd chapters and asks for a title and blurb. Refuses to run when chapters are unfinished or the audit is missing or failed, unless `bookforge run --step finalize --force`. |
 
 `write`, `critique`, `revise`, and `deai` are the chapter steps. The others run once for the book.
+
+## Human seed
+
+The write step refuses to draft a chapter when `write.require_human_seed` is true (the default) and the first scene has no non-whitespace seed. The chapter file is `<project>/manuscript/<chapter_id>/human_seed.md`. A scene file `<project>/manuscript/<chapter_id>/sceneK/human_seed.md` (`scene1` or `scene01`) replaces it for that scene. The chapter seed is used only for the first scene.
+
+The file is plain UTF-8 markdown. Optional YAML front matter (`---` … `---`) is removed, including the newline after the closing `---`. The body then loses exactly one trailing end-of-line when the file has one. Nothing else is stripped. If the body ends inside an open quotation (the last non-space character is an unmatched `"` or U+201C), the continuation is appended with no separator and the prompt says the model is continuing inside that spoken line. Otherwise the join is a blank line. Scrub, `clean_prose`, `enforce_first_line`, and protect do not see the seed. The scene draft and the chapter draft both start with that body. Craft scrub inside the write step is given only the continuation. `protect.py` cannot cheaply mark the seed for later edit/revise passes without turning exact-line protection on for unrelated lines (`norm()` also folds punctuation). That later-pass gap is a known limit.
+
+Beat planning reads `plan.plan_file` and `plan.notes_files` when those templates are set and the files exist. The prompt says notes override the plan file. Their bytes are part of the scene beat-cache key.
+
+On the Gemma tier, or when `write.beat_by_beat` is true, each beat group is its own write call. After the call, `canon_pipeline.process_scene` runs with `chunk` set to that call's index, and a plan-role judge checks the chunk. One retry carries the drift reason. A second miss is listed in `drift_report.json`. The scene summary, the scene-level canon pass, and craft still run after the loop.
+
+When `write.context_budget_tokens` is set, the write prompt keeps beats and the scene card first, then voice sheets for `characters_present`, continuity and facts for those entities, the last `write.prior_words` (default 1500) of prior prose, then older-chapter summaries and a condensed style bible. Blocks drop from the bottom until the estimate fits. If the facts block still will not fit beside the beats and the card, one plan-role call condenses it and the scene reuses that text. `prompt_tokens_est` is stored on the usage row next to `prompt_tokens`. Unset, the write prompt is unchanged.
+
+`context.prior_text` defaults to `full` (recent chapter prose stays in the chapter pack). `summaries_plus_prev_plan` replaces that prose with summaries of every prior chapter, the previous chapter's full plan, and the current chapter's plan (notes included). The write call still sees the last `write.prior_words` of the current chapter. Beat planning and critique use the same pack. Budget trimming runs after that selection. That mode, or `context.characters: chapter_cast`, keeps only the chapter's cast in `characters.md` (scene POVs, `characters_present`, names in the plan, notes, and beats, plus `context.always_characters`). Voice sheets stay on the scene's speakers. `bookforge pack preview` prints the prompt estimate with and without that filter and does not call a model.
+
+A TTY may paste a seed (a line that is only `.`, or EOF). It is saved to the chapter seed path. A non-TTY gets an error that names the path and the format. No prompt.
+
+Raw model text, still unscrubbed, plus the seed prefix:
+
+```
+bookforge run --project P --step write --chapter ch13 --raw-dir DIR
+```
+
+That also writes `DIR/ch13-v1-gemma-raw.txt` (then `v2`, …). The family is `gemma` when the write-role model id contains `gemma`. Scene breaks match `join_scenes`. `write.raw_dir` is the same directory when the flag is omitted. The config-init template points this drafter at Gemma on the Hugging Face router (32k context; USD per 1M input 0.48, cached 0.10, output 1.44). Talkie stays an opt-in fallback reword (`talkie.enabled` false), not the default writer.
 
 `revise.recritique` and `revise.max_passes` are in `DEFAULT_CONFIG` and are not read by the revise step. The editor pass count is one.
 

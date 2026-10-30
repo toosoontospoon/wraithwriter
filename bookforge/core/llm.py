@@ -14,7 +14,7 @@ from typing import Any, Callable, Optional, Type
 import requests
 from pydantic import BaseModel, ValidationError
 
-from bookforge.config import api_key, load_config, resolve_role, role_params
+from bookforge.config import adjusted_role_params, api_key, load_config, resolve_role
 
 AUTH_SCHEME = "Bearer"  # HTTP auth scheme; the key itself always comes from the environment
 
@@ -154,11 +154,18 @@ def build_messages(system: str, prompt: str, model: str, cache: dict) -> list[di
     return msgs
 
 
+def _openrouter(pcfg: dict) -> bool:
+    return "openrouter" in (pcfg.get("base_url") or "")
+
+
 def cache_fields(model: str, cache: dict, pcfg: dict) -> dict:
+    """OpenRouter-only cache routing. Other OpenAI-compatible routers (Hugging Face) get none of these."""
     out = {}
-    if "openrouter" in (pcfg.get("base_url") or ""):
+    if _openrouter(pcfg):
         out["usage"] = {"include": True}          # OpenRouter returns real cost incl. cache discounts
     if not cache.get("enabled"):
+        return out
+    if not _openrouter(pcfg):
         return out
     if cache.get("key"):
         out["prompt_cache_key"] = cache["key"]    # OpenAI cache routing; OpenRouter also uses it as session
@@ -248,7 +255,8 @@ def estimate_cost(model, usage, config) -> float:
     """Cost from config prices, cache-aware (used when the provider doesn't return a cost)."""
     price = config["llm"].get("prices", {}).get(model, {})
     pin, pout = float(price.get("input", 0)), float(price.get("output", 0))
-    pread = float(price.get("cache_read", pin))
+    # `cached` is accepted as an alias of `cache_read` (the featherless page says "cached").
+    pread = float(price.get("cache_read", price.get("cached", pin)))
     pwrite = float(price.get("cache_write", pin))
     pt = int(usage.get("prompt_tokens", 0) or 0)
     ct = int(usage.get("completion_tokens", 0) or 0)
@@ -257,7 +265,13 @@ def estimate_cost(model, usage, config) -> float:
     return (max(0, pt - cr - cw) * pin + cr * pread + cw * pwrite + ct * pout) / 1e6
 
 
-def _log_usage(role, prov, model, usage, latency, config):
+def _prompt_tokens_est(system, prompt) -> int:
+    """Same estimator the write-budget trim uses. No network and no new tokenizer."""
+    from bookforge.core.pack import prompt_token_estimate
+    return prompt_token_estimate((system or "") + "\n\n" + (prompt or ""))
+
+
+def _log_usage(role, prov, model, usage, latency, config, prompt_tokens_est=None):
     global _SPENT
     pt = int(usage.get("prompt_tokens", 0) or 0)
     ct = int(usage.get("completion_tokens", 0) or 0)
@@ -265,7 +279,7 @@ def _log_usage(role, prov, model, usage, latency, config):
     cost = float(usage["cost_usd"]) if usage.get("cost_usd") is not None else est
     _SPENT += cost
     row = {"ts": time.time(), "role": role, "provider": prov, "model": model,
-           "prompt_tokens": pt, "completion_tokens": ct,
+           "prompt_tokens": pt, "prompt_tokens_est": prompt_tokens_est, "completion_tokens": ct,
            "cached_tokens": int(usage.get("cached_tokens", 0) or 0),
            "cache_write_tokens": int(usage.get("cache_write_tokens", 0) or 0),
            "reasoning_tokens": int((usage.get("completion_tokens_details") or {}).get("reasoning_tokens", 0) or 0),
@@ -285,7 +299,8 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
         if not isinstance(out, str):
             out = json.dumps(out)
         _log_usage(role, "fake", "fake", {"prompt_tokens": (len(system or "") + len(prompt)) // 4,
-                                          "completion_tokens": len(out) // 4}, 0.0, config)
+                                          "completion_tokens": len(out) // 4}, 0.0, config,
+                   prompt_tokens_est=_prompt_tokens_est(system, prompt))
         return out
     budget = config["llm"].get("budget_usd")
     if budget is not None and _SPENT >= float(budget):
@@ -293,7 +308,7 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
     if not (provider and model):
         provider, model = resolve_role(role, config)
     prov = get_provider(provider, config)
-    rp = role_params(role, config)
+    rp = adjusted_role_params(role, provider, model, config)
     prov.extra_body = rp["extra_body"]
     prov.cache = cache_settings(config)
     max_tokens = int(max_tokens * rp["mult"]) + rp["headroom"]
@@ -303,7 +318,8 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
         try:
             t0 = time.time()
             text, usage = prov.chat(model, system, prompt, temperature, max_tokens, json_mode)
-            _log_usage(role, provider, model, usage, time.time() - t0, config)
+            _log_usage(role, provider, model, usage, time.time() - t0, config,
+                       prompt_tokens_est=_prompt_tokens_est(system, prompt))
             return text
         except TransientHTTPError as e:
             last = e

@@ -53,12 +53,16 @@ def init(prompt, words, project, no_research):
 @click.option("--force", is_flag=True, help="Rerun even if up to date; finalize without passing audit")
 @click.option("--edit-effort", type=click.Choice(["low", "medium", "high"]), default=None,
               help="Reasoning effort for the editor pass (overrides config; e.g. high for a final polish)")
+@click.option("--raw-dir", default=None, type=click.Path(),
+              help="With the write step, also write DIR/chNN-vX-<family>-raw.txt (seed plus unscrubbed continuations)")
 @click.pass_context
-def run(c, project, step, from_step, to_step, restart_from, chapter, force, edit_effort):
+def run(c, project, step, from_step, to_step, restart_from, chapter, force, edit_effort, raw_dir):
     """Run pipeline steps."""
     if edit_effort:
         os.environ["BOOKFORGE_EDITOR_REASONING_EFFORT"] = edit_effort
     ctx = _ctx(project, c.obj["verbose"])
+    if raw_dir:
+        ctx.write_raw_dir = raw_dir
     if restart_from:
         progress.reset_progress_after_step(ctx, restart_from, chapter)
         if not step:
@@ -312,6 +316,28 @@ def screen_facts(project, chapter):
         raise click.ClickException(f"no outline entry for {chapter}")
     facts.load_or_generate(ctx, ch)
     click.echo(f"wrote {facts.path(ctx, chapter)}")
+
+
+@cli.group("pack")
+def pack_group():
+    """Story-pack previews. These commands do not call an LLM."""
+
+
+@pack_group.command("preview")
+@click.option("--project", required=True, type=click.Path(exists=True))
+@click.option("--chapter", required=True, help="Chapter id, for example ch03")
+@click.option("--scene", required=True, type=int, help="Scene number")
+@click.option("--role", default="write", show_default=True, help="Call to measure. write builds the drafter prompt.")
+def pack_preview(project, chapter, scene, role):
+    """Print estimated prompt tokens for one call. Does not call an LLM."""
+    from bookforge.core import pack as story_pack
+    ctx = _ctx(project)
+    if not ctx.chapter(chapter):
+        raise click.ClickException(f"Chapter {chapter} not found")
+    sent, on, off = story_pack.preview_token_counts(ctx, chapter, scene, role)
+    click.echo(f"prompt_tokens_est {sent}")
+    click.echo(f"with_filter {on}")
+    click.echo(f"without_filter {off}")
 
 
 from bookforge.craft.cli_cmds import craft_group  # noqa: E402

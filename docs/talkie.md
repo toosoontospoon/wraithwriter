@@ -2,7 +2,7 @@
 
 Status: experimental. A definitive detector test is pending.
 
-The stage is off unless `talkie.enabled` is true. `bookforge talkie run` is an explicit opt-in even when the flag is false.
+The stage is off unless `talkie.enabled` is true. Talkie is an opt-in fallback reword, not the default writer. The write step stays on the `write` role (library default `openai/gpt-6-sol`; the config-init template uses Gemma). `bookforge talkie run` is an explicit opt-in even when the flag is false.
 
 ## What it does
 
