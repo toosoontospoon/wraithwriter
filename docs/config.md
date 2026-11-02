@@ -173,7 +173,7 @@ Off until `draft.mode` is `latin_pivot` or the write step is started with `--lat
 | `tag.threshold` | `0.6` | Keep a tell-list hit at or above this Jev probability. |
 | `tag.max_per_paragraph` | `12` | Cap on candidates sent for one paragraph. |
 | `tag.skip_dialogue` | `false` | When true, do not tag words inside quotation marks. |
-| `synonyms.max` | `8` | Synonyms offered to the picker. WordNet needs the optional `latin` extra (`nltk`). |
+| `synonyms.max` | `8` | Synonyms offered to the picker. WordNet needs the optional `latin_pivot` extra (`nltk`) and the `wordnet` corpus. |
 | `pick.margin` | `0.1` | Swap only when the chosen synonym beats the original by at least this much. |
 | `motif_ban.enabled` | `true` | Scan the Latin draft for silence and quiet. These are strong AI-prose tells in this pipeline's outputs. |
 | `motif_ban.action` | `regenerate` | `regenerate` rewrites a hitting chunk. `flag` keeps the text. Either way, remaining hits go to `latin_motif_hits.json`. |
@@ -186,7 +186,10 @@ Off until `draft.mode` is `latin_pivot` or the write step is started with `--lat
 | `always_flag.still_classifier` | `jev` | One Jev yes/no for an ambiguous `still`. Any other value skips that call and flags the hit as ambiguous. |
 | `motif_density` | computed | Not a config key. Hits per 1,000 words, written on `run.json` and printed by `latin-pivot run`. Reported separately for the Latin (`latin_hits`), for `english_raw.txt`, and for `final.txt` (the always-flag list). These motifs are strong AI-prose tells in this pipeline's outputs. |
 | `talkie.endpoint` | `http://127.0.0.1:8080` | Local llama.cpp server the translator pings and calls. |
-| `talkie.manage` | `false` | When true, start the server if the ping fails. |
+| `latin_draft.per_beat` | `true` | One Latin-draft call per beat. `false` uses the write step's beat grouping. |
+| `latin_draft.temperature` | `0.6` | Latin-draft temperature. Whole-scene drafting at 0.7 with penalty 0.3 fused into garbage; 0.6 with no penalty looped. |
+| `latin_draft.frequency_penalty` | `0.15` | Sent as `frequency_penalty` on OpenAI-compatible providers. `0` sends nothing. |
+| `talkie.manage` | `true` | Start the server via `start_cmd` if the ping fails, and stop it when the run ends. |
 | `talkie.start_cmd` | `""` | Command run only when `manage` is true and the server is down. Empty means unset. No path is built in. |
 | `talkie.stop_cmd` | `docker stop talkie` | Run on the way out when this run started the server or `stop_after` is true. |
 | `talkie.stop_after` | `null` | Null follows `manage`. |

@@ -241,6 +241,26 @@ def _with_seeds(para: str, english: str, *, translate_again) -> str:
     return fixed
 
 
+LATIN_DRAFT_DEFAULT = {"per_beat": True, "temperature": 0.6, "frequency_penalty": 0.15}
+
+
+def latin_draft_settings(cfg: dict) -> dict:
+    """Latin draft sampling. Defaults: one Gemma call per beat, temperature 0.6,
+    frequency_penalty 0.15.
+
+    Why: in trials, drafting a whole scene in one call at temperature 0.7 with a
+    0.3 penalty broke down into fused, garbled Latin, and 0.6 with no penalty
+    looped on repeated phrases. Short per-beat calls with a light penalty held up.
+    """
+    raw = ((cfg.get("latin_pivot") or {}).get("latin_draft") or {})
+    out = dict(LATIN_DRAFT_DEFAULT)
+    out.update({k: v for k, v in raw.items() if v is not None})
+    out["per_beat"] = bool(out["per_beat"])
+    out["temperature"] = float(out["temperature"])
+    out["frequency_penalty"] = float(out["frequency_penalty"] or 0.0)
+    return out
+
+
 def _draft_latin(ctx, chapter, scene, so_far: str, step_dir: Path, cfg: dict, budget: Budget) -> str:
     from bookforge.core import pack
     from bookforge.core.human_seed import seed_for_scene
@@ -262,7 +282,13 @@ def _draft_latin(ctx, chapter, scene, so_far: str, step_dir: Path, cfg: dict, bu
     beats = wc._plan_beats(ctx, chapter, card, step_dir, extra=ban_note)
     budget.charge_observed("latin", "gemma", plan_est, llm.spent() - before)
     scene_for_write = {**scene, "beats": beats, "craft_brief": brief}
-    groups = wc._beat_groups(ctx, scene_for_write)
+    draft_cfg = latin_draft_settings(cfg)
+    if draft_cfg["per_beat"]:
+        groups = [[b] for b in (list(beats or []) or ["Write the scene."])]
+    else:
+        groups = wc._beat_groups(ctx, scene_for_write)
+    temperature = draft_cfg["temperature"]
+    sampling = {"frequency_penalty": draft_cfg["frequency_penalty"]} if draft_cfg["frequency_penalty"] else None
     pieces = []
     extra = draft_instruction(seed_lines)
     if ban_note:
@@ -283,8 +309,8 @@ def _draft_latin(ctx, chapter, scene, so_far: str, step_dir: Path, cfg: dict, bu
         est = gemma_cost(system, prompt, cfg)
         budget.ensure("latin", est)
         before = llm.spent()
-        out = llm.llm_call(prompt, system=system, role="write", temperature=0.8,
-                           max_tokens=wc.write_max_tokens(words))
+        out = llm.llm_call(prompt, system=system, role="write", temperature=temperature,
+                           max_tokens=wc.write_max_tokens(words), sampling=sampling)
         budget.charge_observed("latin", "gemma", est, llm.spent() - before)
         if regen:
             for _attempt in range(max(0, limit)):
@@ -295,8 +321,8 @@ def _draft_latin(ctx, chapter, scene, so_far: str, step_dir: Path, cfg: dict, bu
                 est = gemma_cost(system, prompt_r, cfg)
                 budget.ensure("latin", est)
                 before = llm.spent()
-                out = llm.llm_call(prompt_r, system=system, role="write", temperature=0.8,
-                                   max_tokens=wc.write_max_tokens(words))
+                out = llm.llm_call(prompt_r, system=system, role="write", temperature=temperature,
+                                   max_tokens=wc.write_max_tokens(words), sampling=sampling)
                 budget.charge_observed("latin", "gemma", est, llm.spent() - before)
         pieces.append((out or "").strip())
     return "\n\n".join(p for p in pieces if p)

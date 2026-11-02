@@ -162,6 +162,9 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "fewshot_path": None,
         "out_dir": None,
         "cap_usd": 0.50,
+        # One Gemma call per beat at 0.6 with frequency_penalty 0.15. Whole-scene drafting at
+        # 0.7 with penalty 0.3 fused into garbage, and 0.6 with no penalty looped.
+        "latin_draft": {"per_beat": True, "temperature": 0.6, "frequency_penalty": 0.15},
         # ratio_min/ratio_max bound English words / Latin words in the fidelity heuristic.
         "fidelity": {"jev": True, "jev_threshold": 0.6, "retries": 1,
                      "ratio_min": 0.9, "ratio_max": 2.2},
@@ -172,11 +175,11 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         # Stem patterns are data so they can be tightened without a code change.
         "motif_ban": copy.deepcopy(MOTIF_BAN_DEFAULT),
         "always_flag": copy.deepcopy(ALWAYS_FLAG_DEFAULT),
-        # manage is off, so nothing is started or stopped. stop_after null follows manage
-        # (true when manage is true). start_cmd is empty: no server path is baked in.
+        # manage is on: start the server via start_cmd if it is down, and stop it when the run
+        # ends. stop_after null follows manage. start_cmd is empty: no server path is baked in.
         "talkie": {
             "endpoint": "http://127.0.0.1:8080",
-            "manage": False,
+            "manage": True,
             "start_cmd": "",
             "stop_cmd": "docker stop talkie",
             "stop_after": None,

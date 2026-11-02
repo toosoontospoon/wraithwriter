@@ -52,7 +52,9 @@ def test_defaults_stay_standard_and_nltk_is_optional():
     assert lp["pick"]["margin"] == 0.1
     talkie_cfg = lp["talkie"]
     assert talkie_cfg["endpoint"] == "http://127.0.0.1:8080"
-    assert talkie_cfg["manage"] is False
+    assert talkie_cfg["manage"] is True
+    assert lp["latin_draft"] == {"per_beat": True, "temperature": 0.6, "frequency_penalty": 0.15}
+    assert lp["motif_ban"]["max_regens"] == 1
     assert talkie_cfg["stop_cmd"] == "docker stop talkie"
     assert talkie_cfg["start_cmd"] == ""
     assert talkie_cfg["stop_after"] is None
