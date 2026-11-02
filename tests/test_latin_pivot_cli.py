@@ -39,6 +39,7 @@ def test_standard_write_does_not_enter_latin_pivot(project, fake):
     jev.set_fake(boom)
     write_chapter.run(project, "ch01")
     assert not any(LATIN_DRAFT_INSTRUCTION.split(".")[0] in (prompt or "") for _role, prompt, _sys in fake.calls)
+    assert not any("silence or quiet as a motif" in (prompt or "") for _role, prompt, _sys in fake.calls)
     assert not (project.project_dir / "runs" / "latin_pivot").exists()
 
 

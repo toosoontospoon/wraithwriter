@@ -175,6 +175,15 @@ Off until `draft.mode` is `latin_pivot` or the write step is started with `--lat
 | `tag.skip_dialogue` | `false` | When true, do not tag words inside quotation marks. |
 | `synonyms.max` | `8` | Synonyms offered to the picker. WordNet needs the optional `latin` extra (`nltk`). |
 | `pick.margin` | `0.1` | Swap only when the chosen synonym beats the original by at least this much. |
+| `motif_ban.enabled` | `true` | Scan the Latin draft for silence and quiet. These are strong AI-prose tells in this pipeline's outputs. |
+| `motif_ban.action` | `regenerate` | `regenerate` rewrites a hitting chunk. `flag` keeps the text. Either way, remaining hits go to `latin_motif_hits.json`. |
+| `motif_ban.max_regens` | `1` | Regeneration attempts per chunk. Each one is refused before the call if it would pass `cap_usd`. |
+| `motif_ban.english` | silence, quiet, and related phrases | Banned English words listed in the Latin-draft prompt and the latin_pivot beat prompt. |
+| `motif_ban.latin` | silentium, tacere, quies, and related lemmas | Banned Latin stems listed in those same prompts. |
+| `motif_ban.latin_patterns` | stem regexes | Patterns `latin_hits` uses. Tunable without a code change. They must not match `silva`, `tactus`, or `mutare`. |
+| `always_flag.enabled` | `true` | Flag the English phrase list at the start of tagging. No Jev score and no swap. Written to `flag_for_edit.json`. |
+| `always_flag.phrases` | silence, quiet, still, and related phrases | Case-insensitive, word boundaries, light inflection, flexible whitespace. `still` is the noun or adjective only. |
+| `always_flag.still_classifier` | `jev` | One Jev yes/no for an ambiguous `still`. Any other value skips that call and flags the hit as ambiguous. |
 | `talkie.endpoint` | `http://127.0.0.1:8080` | Local llama.cpp server the translator pings and calls. |
 | `talkie.manage` | `false` | When true, start the server if the ping fails. |
 | `talkie.start_cmd` | `""` | Command run only when `manage` is true and the server is down. Empty means unset. No path is built in. |
