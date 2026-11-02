@@ -273,7 +273,17 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
                        "review": len(rep["review"]), "amendments": len(rep["amendments"])}
         ctx.save_progress()
     if not sp.get("craft"):
-        # Craft scrubs its argument. Give it the continuation so the seed is not an argument.
+        # Craft scrubs its argument. Give it the continuation so a leading seed is not an argument.
+        # A latin-pivot seed can sit mid-paragraph, so that prefix guard misses it. Shield those
+        # bytes, let scrub run, then restore them and check they survived.
+        shields: list[tuple[str, str]] = []
+        if latin_pivot_enabled(ctx) and opening:
+            from bookforge.core.latin_pivot.seeds import (
+                assert_seeds_preserved, restore_shields, shield_inners,
+            )
+            inners = [ln for ln in opening.splitlines() if ln.strip()]
+            if inners:
+                text, shields = shield_inners(text, inners)
         craft_src = text[len(opening):] if opening and text.startswith(opening) else text
         rep = craft.process_scene(ctx, chapter["id"], scene, craft_src, step_dir)
         if opening and text.startswith(opening):
@@ -282,6 +292,11 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
                 ctx.write_text(path, text)
         elif rep["text"] != text:  # verbatim autofixes (e.g. prophecy wording)
             text = scrub(rep["text"])
+            ctx.write_text(path, text)
+        if shields:
+            text = restore_shields(text, shields)
+            assert_seeds_preserved(
+                "".join(f"<<SEED>>{inner}<</SEED>>" for _token, inner in shields), text)
             ctx.write_text(path, text)
         sp["craft"] = {"events": rep["events"], "issues": len(rep["issues"])}
         ctx.save_progress()

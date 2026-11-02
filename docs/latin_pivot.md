@@ -25,6 +25,8 @@ Order is fixed: `latin`, `translate`, `fidelity`, `tag`, `synonyms`, `pick`, `sc
 
 Seed markers that the translator mangles between surviving `<<SEED>>` tags are spliced back. If the markers themselves are lost, the paragraph is translated once more. A second loss fails that paragraph.
 
+The write step still runs craft scrub on the returned scene. A latin-pivot seed often sits mid-paragraph, so the leading-seed guard does not cover it. Those seed lines are shielded before that scrub, restored afterward, and checked with `assert_seeds_preserved` on the scene draft. The chapter draft is the joined scenes, so the same bytes are in both files.
+
 ## CLI
 
 ```

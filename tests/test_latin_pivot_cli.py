@@ -80,6 +80,51 @@ def test_config_mode_and_cli_flag_turn_it_on(project, fake, monkeypatch):
     assert flagged
 
 
+def test_write_step_keeps_an_em_dash_inside_a_mid_paragraph_seed(project, fake, monkeypatch):
+    """Craft scrub runs on the scene after markers are stripped. A mid-paragraph seed must survive."""
+    _setup(project)
+    monkeypatch.setattr("bookforge.core.latin_pivot.talkie_lifecycle.ping_endpoint", lambda *_a, **_k: (True, "ok"))
+    seed = 'She waited\u2014"Not a word," she told the boy.'
+    seed_path = project.manuscript_dir / "ch01" / "human_seed.md"
+    seed_path.parent.mkdir(parents=True, exist_ok=True)
+    seed_path.write_text(seed + "\n", encoding="utf-8")
+    wrapped = "<<SEED>>" + seed + "<</SEED>>"
+    latin = (
+        "Puer in agro ambulabat et canem parvum prope viam longam vidit hodie. "
+        + wrapped + " Deinde tacuit in camera quieta."
+    )
+    english = (
+        "A boy walked in the field and saw a small dog near the long road today. "
+        + wrapped + " Then the room stayed quiet."
+    )
+
+    def hook(prompt, system):
+        if "classical-style Latin" not in (prompt or ""):
+            return None
+        if "HUMAN SEED" in prompt:
+            return latin
+        return LATIN_BOY
+
+    def talk(prompt, n_predict, seed_n, stop, **kw):
+        target = prompt.rsplit("Latin:\n", 1)[-1].split("\n\nEnglish:", 1)[0]
+        if "<<SEED>>" in target:
+            return english
+        return ENGLISH_BOY
+
+    fake.hooks["write"] = hook
+    talkie.set_fake(talk)
+    jev.set_fake(jev_noul())
+    config.set_config({"draft": {"mode": "latin_pivot"}, "latin_pivot": {"fidelity": {"jev": False}}})
+    write_chapter.run(project, "ch01")
+    scene = project.scene_path("ch01", 1, "draft").read_text(encoding="utf-8")
+    chapter = project.chapter_path("ch01", "draft").read_text(encoding="utf-8")
+    assert seed in scene
+    assert seed in chapter
+    assert "\u2014" in scene
+    assert "<<SEED>>" not in scene
+    assert "<<SEED>>" not in chapter
+
+
 def test_cli_smoke_latin_file_and_dry_run(tmp_path):
     proj = tmp_path / "proj"
     proj.mkdir()

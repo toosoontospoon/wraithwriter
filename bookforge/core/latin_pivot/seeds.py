@@ -89,6 +89,39 @@ def map_outside_seeds(text: str, fn) -> str:
     return "".join(parts)
 
 
+def shield_inners(text: str, inners: list[str]) -> tuple[str, list[tuple[str, str]]]:
+    """Replace each seed inner, in order, with an ASCII token scrub will not rewrite.
+
+    The markers are already gone by the time the write step scrubs the scene.
+    The token is put back with ``restore_shields`` after that scrub.
+    """
+    out = text or ""
+    pos = 0
+    shields: list[tuple[str, str]] = []
+    for n, inner in enumerate(inners):
+        if inner == "":
+            continue
+        i = out.find(inner, pos)
+        if i < 0:
+            raise SeedLost(f"seed span missing before scrub: {inner!r}")
+        token = f"SEEDSHIELD{n}END"
+        out = out[:i] + token + out[i + len(inner):]
+        pos = i + len(token)
+        shields.append((token, inner))
+    return out, shields
+
+
+def restore_shields(text: str, shields: list[tuple[str, str]]) -> str:
+    """Put each shielded inner back. A missing token means the scrub ate the shield."""
+    out = text or ""
+    for token, inner in shields:
+        i = out.find(token)
+        if i < 0:
+            raise SeedLost(f"seed shield lost during scrub: {token}")
+        out = out[:i] + inner + out[i + len(token):]
+    return out
+
+
 def assert_seeds_preserved(source_text: str, final_text: str) -> None:
     """Each seed's inner bytes from ``source_text`` occur in ``final_text``, in order.
 
