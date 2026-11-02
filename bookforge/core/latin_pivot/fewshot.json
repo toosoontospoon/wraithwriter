@@ -1,0 +1,21 @@
+{
+  "header": "LATIN PROSE FOR TRANSLATION\nEach passage is followed by a close and faithful English rendering, sentence for sentence. English words between <<SEED>> and <</SEED>> are copied unchanged.",
+  "pairs": [
+    {
+      "latin": "Puer in agro ambulabat cum canem parvum vidit. Canis sub arbore iacebat et tremebat. Puer eum sustulit et domum portavit.",
+      "english": "A boy was walking in the field when he saw a small dog. The dog was lying under a tree and trembling. The boy picked it up and carried it home."
+    },
+    {
+      "latin": "Mercator equum suum ad flumen duxit. Aqua alta et celeris erat, itaque ripam diu spectavit. Denique pontem petivit, quamquam longe aberat.",
+      "english": "The merchant led his horse to the river. The water was deep and swift, so he looked at the bank for a long time. At last he made for the bridge, although it was far away."
+    },
+    {
+      "latin": "Soror mea epistulam e Roma accepit. Eam legit, deinde ridens mihi dedit. \"Pater noster,\" inquit, \"mox revertetur.\"",
+      "english": "My sister received a letter from Rome. She read it, then gave it to me with a smile. \"Our father,\" she said, \"will soon return.\""
+    },
+    {
+      "latin": "Nauta ad portum rediit. <<SEED>>\"Not a word,\" he told the boy.<</SEED>> Deinde navem reliquit et in tabernam intravit.",
+      "english": "The sailor came back to the harbour. <<SEED>>\"Not a word,\" he told the boy.<</SEED>> Then he left the ship and went into the inn."
+    }
+  ]
+}
