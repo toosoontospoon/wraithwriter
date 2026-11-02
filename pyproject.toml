@@ -13,6 +13,8 @@ vectors = ["sentence-transformers>=3.0", "numpy"]
 webui = ["streamlit>=1.40"]
 tokens = ["tiktoken"]
 test = ["pytest>=8"]
+latin = ["nltk"]
+latin_pivot = ["nltk"]
 
 [project.scripts]
 bookforge = "bookforge.cli:main"
@@ -21,7 +23,8 @@ bookforge = "bookforge.cli:main"
 include = ["bookforge*"]
 
 [tool.setuptools.package-data]
-bookforge = ["style/*", "style/*/*", "style/*/*/*", "style/*/*/*/*", "jev_templates/*.json"]
+bookforge = ["style/*", "style/*/*", "style/*/*/*", "style/*/*/*/*", "jev_templates/*.json",
+             "core/latin_pivot/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

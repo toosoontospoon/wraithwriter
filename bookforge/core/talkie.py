@@ -73,13 +73,19 @@ def complete(prompt: str, n_predict: int, seed: int, stop, *, ban_nl: bool = Fal
              temperature: float | None = None, min_p: float | None = None,
              repeat_penalty: float | None = None, timeout: float | None = None,
              endpoint: str | None = None, log_dir=None, cache_prompt: bool = True,
-             cfg: dict | None = None) -> tuple[str, dict]:
-    """One ``/completion`` call. Returns ``(text, log row)``."""
+             cfg: dict | None = None, top_k: int | None = None) -> tuple[str, dict]:
+    """One ``/completion`` call. Returns ``(text, log row)``.
+
+    ``top_k`` defaults to 0, which is the body every existing caller already sends.
+    Latin-pivot translation passes 1. Other callers omit it and stay unchanged.
+    """
     temperature = DEFAULTS["temperature"] if temperature is None else temperature
     min_p = DEFAULTS["min_p"] if min_p is None else min_p
     repeat_penalty = DEFAULTS["repeat_penalty"] if repeat_penalty is None else repeat_penalty
     timeout = DEFAULTS["timeout_s"] if timeout is None else timeout
     endpoint = endpoint or _cfg_get(cfg, "endpoint")
+    if top_k is None:
+        top_k = 0
     body = {
         "prompt": prompt,
         "n_predict": int(n_predict),
@@ -89,7 +95,7 @@ def complete(prompt: str, n_predict: int, seed: int, stop, *, ban_nl: bool = Fal
         "temperature": temperature,
         "min_p": min_p,
         "top_p": 1.0,
-        "top_k": 0,
+        "top_k": int(top_k),
         "repeat_penalty": repeat_penalty,
         "repeat_last_n": 256,
     }
@@ -100,7 +106,8 @@ def complete(prompt: str, n_predict: int, seed: int, stop, *, ban_nl: bool = Fal
         if _FAKE is not None:
             res = _FAKE(prompt, int(n_predict), int(seed), list(stop), ban_nl=ban_nl,
                         temperature=temperature, min_p=min_p, repeat_penalty=repeat_penalty,
-                        timeout=timeout, endpoint=endpoint)
+                        timeout=timeout, endpoint=endpoint, cache_prompt=bool(cache_prompt),
+                        top_k=int(top_k))
             if isinstance(res, str):
                 res = {"content": res, "stop_type": "word", "timings": {}}
         else:

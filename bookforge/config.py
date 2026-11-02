@@ -12,6 +12,8 @@ from typing import Any, Dict
 
 import yaml
 
+from bookforge.core.latin_pivot.motifs import ALWAYS_FLAG_DEFAULT, MOTIF_BAN_DEFAULT
+
 # Featherless Gemma on the Hugging Face router. 32k context, no reasoning body.
 # USD per 1M from the featherless.ai model page (HF router adds no markup).
 GEMMA_MODEL_ID = "nbeerbower/Gemma4-Gutenberg-31B-Heretic:featherless-ai"
@@ -153,6 +155,37 @@ DEFAULT_CONFIG: Dict[str, Any] = {
     # when a budget is set (current scene so far, else the previous scene or chapter).
     "write": {"require_human_seed": True, "raw_dir": None, "beat_by_beat": False, "beats_per_call": 1,
               "context_budget_tokens": None, "prior_words": 1500},
+    # Opt-in Latin draft then local translation. ``standard`` is the normal write path.
+    "draft": {"mode": "standard"},
+    "latin_pivot": {
+        "latin_file": None,
+        "fewshot_path": None,
+        "out_dir": None,
+        "cap_usd": 0.50,
+        # One Gemma call per beat at 0.6 with frequency_penalty 0.15. Whole-scene drafting at
+        # 0.7 with penalty 0.3 fused into garbage, and 0.6 with no penalty looped.
+        "latin_draft": {"per_beat": True, "temperature": 0.6, "frequency_penalty": 0.15},
+        # ratio_min/ratio_max bound English words / Latin words in the fidelity heuristic.
+        "fidelity": {"jev": True, "jev_threshold": 0.6, "retries": 1,
+                     "ratio_min": 0.9, "ratio_max": 2.2},
+        "tag": {"threshold": 0.6, "max_per_paragraph": 12, "skip_dialogue": False},
+        "synonyms": {"max": 8},
+        "pick": {"margin": 0.1},
+        # Silence and quiet are strong AI-prose tells in this pipeline's Latin and English.
+        # Stem patterns are data so they can be tightened without a code change.
+        "motif_ban": copy.deepcopy(MOTIF_BAN_DEFAULT),
+        "always_flag": copy.deepcopy(ALWAYS_FLAG_DEFAULT),
+        # manage is on: start the server via start_cmd if it is down, and stop it when the run
+        # ends. stop_after null follows manage. start_cmd is empty: no server path is baked in.
+        "talkie": {
+            "endpoint": "http://127.0.0.1:8080",
+            "manage": True,
+            "start_cmd": "",
+            "stop_cmd": "docker stop talkie",
+            "stop_after": None,
+            "start_timeout_s": 60,
+        },
+    },
     # Anti-AI pass. Detector hits ride the existing editor. The residual LLM rewrite is off
     # unless deai.rewrite_residual is true. external_detector is report-only (no key in the repo).
     "deai": {"max_flag_ratio": 0.0, "max_loops": 2, "min_severity": 2, "cluster": 3,
@@ -286,6 +319,7 @@ _TEMPLATE_HEADER = (
     "# router (32k context; USD per 1M input 0.48, cached 0.10, output 1.44; no reasoning body)\n"
     "# and the other generative roles at openrouter deepseek/deepseek-v4.1-flash-1017.\n"
     "# talkie.enabled is false: talkie is an opt-in fallback reword, not the default writer.\n"
+    "# draft.mode stays standard. latin_pivot is opt-in and off until mode is latin_pivot.\n"
     "# Set HF_TOKEN in the environment. No API keys belong in this file.\n"
 )
 

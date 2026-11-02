@@ -30,13 +30,13 @@ def _scene_card_hash(ctx, chapter, scene):
     return stable_hash([chapter.get("id"), scene, chapter.get("ends_with"), plan_hash])
 
 
-def _plan_beats(ctx, chapter, scene, step_dir):
+def _plan_beats(ctx, chapter, scene, step_dir, extra: str = ""):
     covered = ctx.load_summaries()["scenes"].get(chapter["id"], {})
     canon = ctx.canon()
     threads = [t["description"] for t in canon.open_threads()]
     from bookforge.core.length import BEAT_TYPE_GUIDE, CRISIS_RULE, NO_FILLER_RULE
     from bookforge.core import pack
-    res = llm_call(f"""{pack.chapter_pack(ctx, chapter)}{pack.chapter_plan_block(chapter, scene)}
+    prompt = f"""{pack.chapter_pack(ctx, chapter)}{pack.chapter_plan_block(chapter, scene)}
 {pack.author_plan_block(ctx, chapter["id"])}
 
 Turn this scene card into an ordered beat sheet of 1-8 concrete beats: exactly as many as the scene's events need. {BEAT_TYPE_GUIDE} {NO_FILLER_RULE} {CRISIS_RULE}
@@ -53,7 +53,10 @@ Each beat is a concrete, clearly described event. CLARITY (reader is about 16): 
 
 SELF-CHECK before answering: re-read the continuity sheet and the earlier chapters' text in the story pack. Every beat must agree with them (geography, who lives where, who owns what, injuries, what each character knows, time of day). Use the word "introduce" only for a first appearance in the book.
 
-Output ONLY JSON: {{"beats": ["(~280w, dialogue) ..."]}}""", system=pack.system_for(ctx, chapter), role="plan",
+Output ONLY JSON: {{"beats": ["(~280w, dialogue) ..."]}}"""
+    if extra and str(extra).strip():
+        prompt = prompt + "\n\n" + str(extra).strip()
+    res = llm_call(prompt, system=pack.system_for(ctx, chapter), role="plan",
                    schema=BeatSheet, max_tokens=6000, temperature=0.3, raw_dir=step_dir)
     beats = res.beats or scene.get("beats") or [scene.get("action", "Write the scene.")]
     return scrub_obj(beats)
@@ -192,7 +195,18 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
     path = ctx.scene_path(chapter["id"], scene["scene_number"], "draft")
     opening = seed_for_scene(ctx, chapter, scene)
     fresh_raw = None
-    if not (sp.get("written") and path.exists()):
+    from bookforge.core.latin_pivot.pipeline import enabled as latin_pivot_enabled
+    if latin_pivot_enabled(ctx) and not (sp.get("written") and path.exists()):
+        from bookforge.core.latin_pivot.pipeline import produce_scene
+        text = produce_scene(ctx, chapter, scene, chapter_text_so_far, step_dir)
+        ctx.write_text(path, text)
+        fresh_raw = text
+        sp["written"] = True
+        sp.pop("summarized", None)
+        sp.pop("canon", None)
+        sp.pop("craft", None)
+        ctx.save_progress()
+    elif not (sp.get("written") and path.exists()):
         brief = craft.brief(ctx, chapter, scene)
         if not sp.get("beats"):
             sp["beats"] = _plan_beats(ctx, chapter, {**scene, "craft_brief": brief}, step_dir)
@@ -262,7 +276,17 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
                        "review": len(rep["review"]), "amendments": len(rep["amendments"])}
         ctx.save_progress()
     if not sp.get("craft"):
-        # Craft scrubs its argument. Give it the continuation so the seed is not an argument.
+        # Craft scrubs its argument. Give it the continuation so a leading seed is not an argument.
+        # A latin-pivot seed can sit mid-paragraph, so that prefix guard misses it. Shield those
+        # bytes, let scrub run, then restore them and check they survived.
+        shields: list[tuple[str, str]] = []
+        if latin_pivot_enabled(ctx) and opening:
+            from bookforge.core.latin_pivot.seeds import (
+                assert_seeds_preserved, restore_shields, shield_inners,
+            )
+            inners = [ln for ln in opening.splitlines() if ln.strip()]
+            if inners:
+                text, shields = shield_inners(text, inners)
         craft_src = text[len(opening):] if opening and text.startswith(opening) else text
         rep = craft.process_scene(ctx, chapter["id"], scene, craft_src, step_dir)
         if opening and text.startswith(opening):
@@ -271,6 +295,11 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
                 ctx.write_text(path, text)
         elif rep["text"] != text:  # verbatim autofixes (e.g. prophecy wording)
             text = scrub(rep["text"])
+            ctx.write_text(path, text)
+        if shields:
+            text = restore_shields(text, shields)
+            assert_seeds_preserved(
+                "".join(f"<<SEED>>{inner}<</SEED>>" for _token, inner in shields), text)
             ctx.write_text(path, text)
         sp["craft"] = {"events": rep["events"], "issues": len(rep["issues"])}
         ctx.save_progress()

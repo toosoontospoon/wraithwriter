@@ -39,6 +39,7 @@ bookforge run --project DIR [--step NAME] [--from A --to B] [--restart-from NAME
 | `--force` | On `--step all`, rerun steps that are already current. `finalize` is still called without `force`, so a missing or failed audit still stops it. On a chapter step with no `--chapter`, rerun chapters that are already current. On `--step finalize`, pass `force` into that step: unfinished chapters and a failed or missing audit are allowed. A single named step other than `finalize` always runs, so `--force` changes nothing there. `--force` is not applied to a `--from`/`--to` range. |
 | `--edit-effort` | Sets `BOOKFORGE_EDITOR_REASONING_EFFORT` for this process (`low`, `medium`, or `high`). |
 | `--raw-dir` | Write step only. Also writes `<DIR>/<chapter_id>-vN-<family>-raw.txt`: human-seed prefix plus raw unscrubbed continuations, scene breaks as in `join_scenes`. `N` is the next free version (`v1`, then `v2`). Family is `gemma` when the write-role model contains `gemma`, else a short slug. `write.raw_dir` is the same setting. |
+| `--latin-pivot` | Write step only. Draft that step through the opt-in Latin pipeline instead of the normal English drafter. Off unless this flag is set or `draft.mode` is `latin_pivot`. See [latin_pivot.md](latin_pivot.md). |
 
 ```
 bookforge run --project P --step write --chapter ch13 --raw-dir DIR
@@ -58,6 +59,19 @@ Aliases accepted by `--step`, `--from`, `--to`, and `--restart-from`:
 | `draft` | `write` |
 | `polish`, `global_polish` | `audit` |
 | `de-ai`, `deai_chapter` | `deai` |
+
+## `latin-pivot`
+
+```
+bookforge latin-pivot run --project DIR --chapter chNN [--scene K]
+    [--latin-file PATH] [--from-stage S] [--to-stage S] [--out DIR]
+    [--no-jev] [--dry-run] [--cap-usd N]
+bookforge latin-pivot estimate --project DIR --chapter chNN [--scene K]
+    [--latin-file PATH] [--from-stage S] [--to-stage S] [--out DIR]
+    [--no-jev] [--cap-usd N]
+```
+
+Stages, in order: `latin`, `translate`, `fidelity`, `tag`, `synonyms`, `pick`, `scrub`. `--dry-run` and `estimate` print the stage plan, the paragraph count, and a cost estimate. They call no model, Talkie, Jev, or subprocess. Default output is `<project>/runs/latin_pivot/<chapter>[-sK]/`. Full behaviour, costs, and the Talkie lifecycle are in [latin_pivot.md](latin_pivot.md).
 
 ## `status`
 

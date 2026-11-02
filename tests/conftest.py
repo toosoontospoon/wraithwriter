@@ -35,6 +35,34 @@ def isolated(tmp_path, monkeypatch):
 
 
 @pytest.fixture
+def block_network(monkeypatch):
+    """Latin-pivot tests opt in. A real HTTP or subprocess call fails the test."""
+    def boom(*_a, **_k):
+        raise AssertionError("network or subprocess call in a latin_pivot test")
+
+    import subprocess
+
+    import requests
+
+    from bookforge.core import jev, llm, talkie
+
+    monkeypatch.setattr(requests, "post", boom)
+    monkeypatch.setattr(requests, "get", boom)
+    monkeypatch.setattr(talkie.requests, "post", boom)
+    monkeypatch.setattr(talkie.requests, "get", boom)
+    monkeypatch.setattr(jev.requests, "post", boom)
+    monkeypatch.setattr(jev.requests, "get", boom)
+    monkeypatch.setattr(llm.requests, "post", boom)
+    monkeypatch.setattr(llm.requests, "get", boom)
+    monkeypatch.setattr(subprocess, "run", boom)
+    # talkie.manage defaults to true, so a run ends with talkie.stop_cmd. Record it, never run it.
+    from bookforge.core.latin_pivot import talkie_lifecycle
+    runs: list[str] = []
+    monkeypatch.setattr(talkie_lifecycle, "default_runner", lambda cmd: runs.append(cmd))
+    return runs
+
+
+@pytest.fixture
 def fake():
     f = FakeLLM()
     llm.set_fake(f)

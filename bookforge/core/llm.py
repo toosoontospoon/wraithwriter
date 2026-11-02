@@ -292,7 +292,7 @@ def _log_usage(role, prov, model, usage, latency, config, prompt_tokens_est=None
                 f.write(json.dumps(row) + "\n")
 
 
-def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider, model):
+def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider, model, sampling=None):
     config = load_config()
     if _FAKE is not None:
         out = _FAKE(role=role, system=strip_breaks(system or ""), prompt=strip_breaks(prompt), json_mode=json_mode)
@@ -309,7 +309,7 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
         provider, model = resolve_role(role, config)
     prov = get_provider(provider, config)
     rp = adjusted_role_params(role, provider, model, config)
-    prov.extra_body = rp["extra_body"]
+    prov.extra_body = {**(rp["extra_body"] or {}), **(sampling or {})}
     prov.cache = cache_settings(config)
     max_tokens = int(max_tokens * rp["mult"]) + rp["headroom"]
     retries = int(config["llm"].get("http_retries", 4))
@@ -331,7 +331,8 @@ def _raw_call(role, system, prompt, temperature, max_tokens, json_mode, provider
 
 def llm_call(prompt: str, temperature: float = 0.7, json_mode: bool = False, role: str = "summary",
              provider: str | None = None, model: str | None = None, max_tokens: int = 4000,
-             system: str = "", schema: Type[BaseModel] | None = None, raw_dir: Path | None = None):
+             system: str = "", schema: Type[BaseModel] | None = None, raw_dir: Path | None = None,
+             sampling: dict | None = None):
     """Chat completion. With ``schema`` (implies JSON) returns a validated model instance.
 
     JSON failures are retried with the parse/validation error fed back to the model;
@@ -341,12 +342,12 @@ def llm_call(prompt: str, temperature: float = 0.7, json_mode: bool = False, rol
         json_mode = True
     if not json_mode:
         return strip_model_wrapper(_raw_call(role, system, prompt, temperature, max_tokens, False,
-                                             provider, model))
+                                             provider, model, sampling))
     tries = int(load_config()["llm"].get("json_retries", 2)) + 1
     p, err = prompt, None
     for attempt in range(tries):
         text = _raw_call(role, system, p, temperature if attempt == 0 else 0.2, max_tokens, True,
-                         provider, model)
+                         provider, model, sampling)
         try:
             data = parse_json_loose(text)
             if schema is not None:
