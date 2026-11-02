@@ -192,7 +192,18 @@ def write_scene(ctx, chapter, scene, chapter_text_so_far, step_dir, raw_scenes=N
     path = ctx.scene_path(chapter["id"], scene["scene_number"], "draft")
     opening = seed_for_scene(ctx, chapter, scene)
     fresh_raw = None
-    if not (sp.get("written") and path.exists()):
+    from bookforge.core.latin_pivot.pipeline import enabled as latin_pivot_enabled
+    if latin_pivot_enabled(ctx) and not (sp.get("written") and path.exists()):
+        from bookforge.core.latin_pivot.pipeline import produce_scene
+        text = produce_scene(ctx, chapter, scene, chapter_text_so_far, step_dir)
+        ctx.write_text(path, text)
+        fresh_raw = text
+        sp["written"] = True
+        sp.pop("summarized", None)
+        sp.pop("canon", None)
+        sp.pop("craft", None)
+        ctx.save_progress()
+    elif not (sp.get("written") and path.exists()):
         brief = craft.brief(ctx, chapter, scene)
         if not sp.get("beats"):
             sp["beats"] = _plan_beats(ctx, chapter, {**scene, "craft_brief": brief}, step_dir)

@@ -55,14 +55,18 @@ def init(prompt, words, project, no_research):
               help="Reasoning effort for the editor pass (overrides config; e.g. high for a final polish)")
 @click.option("--raw-dir", default=None, type=click.Path(),
               help="With the write step, also write DIR/chNN-vX-<family>-raw.txt (seed plus unscrubbed continuations)")
+@click.option("--latin-pivot", "latin_pivot", is_flag=True,
+              help="With --step write, draft through the opt-in latin_pivot pipeline")
 @click.pass_context
-def run(c, project, step, from_step, to_step, restart_from, chapter, force, edit_effort, raw_dir):
+def run(c, project, step, from_step, to_step, restart_from, chapter, force, edit_effort, raw_dir, latin_pivot):
     """Run pipeline steps."""
     if edit_effort:
         os.environ["BOOKFORGE_EDITOR_REASONING_EFFORT"] = edit_effort
     ctx = _ctx(project, c.obj["verbose"])
     if raw_dir:
         ctx.write_raw_dir = raw_dir
+    if latin_pivot:
+        ctx.latin_pivot = True
     if restart_from:
         progress.reset_progress_after_step(ctx, restart_from, chapter)
         if not step:
@@ -536,6 +540,61 @@ def talkie_ping(endpoint):
     click.echo(message)
     if not ok:
         raise SystemExit(1)
+
+
+@cli.group("latin-pivot")
+def latin_pivot_group():
+    """Opt-in Latin draft, local translation, and de-AI. Off unless selected."""
+
+
+def _latin_common(project, chapter, scene, latin_file, from_stage, to_stage, out, no_jev, cap_usd, dry_run):
+    from bookforge.core.latin_pivot.pipeline import execute
+    return execute(
+        project=project, chapter=chapter, scene=scene, latin_file=latin_file,
+        from_stage=from_stage, to_stage=to_stage, out_dir=out, no_jev=no_jev,
+        dry_run=dry_run, cap_usd=cap_usd,
+    )
+
+
+_STAGES = ["latin", "translate", "fidelity", "tag", "synonyms", "pick", "scrub"]
+
+
+@latin_pivot_group.command("run")
+@click.option("--project", required=True, type=click.Path(exists=True))
+@click.option("--chapter", required=True, help="Chapter id, for example ch01")
+@click.option("--scene", default=None, type=int, help="Scene number")
+@click.option("--latin-file", default=None, type=click.Path(exists=True),
+              help="Skip the Gemma Latin draft and translate this file")
+@click.option("--from-stage", default=None, type=click.Choice(_STAGES))
+@click.option("--to-stage", default=None, type=click.Choice(_STAGES))
+@click.option("--out", default=None, type=click.Path(), help="Run directory")
+@click.option("--no-jev", is_flag=True, help="Heuristic fidelity only; do not score or pick with Jev")
+@click.option("--dry-run", is_flag=True, help="Print the stage plan, paragraph count, and cost estimate")
+@click.option("--cap-usd", default=None, type=float, help="Run cap in USD (default latin_pivot.cap_usd)")
+def latin_pivot_run(project, chapter, scene, latin_file, from_stage, to_stage, out, no_jev, dry_run, cap_usd):
+    """Run latin-pivot stages for one chapter or scene."""
+    try:
+        result = _latin_common(project, chapter, scene, latin_file, from_stage, to_stage, out, no_jev, cap_usd, dry_run)
+    except Exception as exc:
+        raise click.ClickException(str(exc)) from exc
+    if dry_run:
+        return
+    click.echo(f"wrote {result['out_dir']}")
+
+
+@latin_pivot_group.command("estimate")
+@click.option("--project", required=True, type=click.Path(exists=True))
+@click.option("--chapter", required=True)
+@click.option("--scene", default=None, type=int)
+@click.option("--latin-file", default=None, type=click.Path(exists=True))
+@click.option("--from-stage", default=None, type=click.Choice(_STAGES))
+@click.option("--to-stage", default=None, type=click.Choice(_STAGES))
+@click.option("--out", default=None, type=click.Path())
+@click.option("--no-jev", is_flag=True)
+@click.option("--cap-usd", default=None, type=float)
+def latin_pivot_estimate(project, chapter, scene, latin_file, from_stage, to_stage, out, no_jev, cap_usd):
+    """Offline cost estimate. No model, Talkie, Jev, or subprocess calls."""
+    _latin_common(project, chapter, scene, latin_file, from_stage, to_stage, out, no_jev, cap_usd, True)
 
 
 if __name__ == "__main__":
