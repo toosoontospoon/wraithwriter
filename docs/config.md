@@ -184,6 +184,7 @@ Off until `draft.mode` is `latin_pivot` or the write step is started with `--lat
 | `always_flag.enabled` | `true` | Flag the English phrase list at the start of tagging. No Jev score and no swap. Written to `flag_for_edit.json`. |
 | `always_flag.phrases` | silence, quiet, still, and related phrases | Case-insensitive, word boundaries, light inflection, flexible whitespace. `still` is the noun or adjective only. |
 | `always_flag.still_classifier` | `jev` | One Jev yes/no for an ambiguous `still`. Any other value skips that call and flags the hit as ambiguous. |
+| `motif_density` | computed | Not a config key. Hits per 1,000 words, written on `run.json` and printed by `latin-pivot run`. Reported separately for the Latin (`latin_hits`), for `english_raw.txt`, and for `final.txt` (the always-flag list). These motifs are strong AI-prose tells in this pipeline's outputs. |
 | `talkie.endpoint` | `http://127.0.0.1:8080` | Local llama.cpp server the translator pings and calls. |
 | `talkie.manage` | `false` | When true, start the server if the ping fails. |
 | `talkie.start_cmd` | `""` | Command run only when `manage` is true and the server is down. Empty means unset. No path is built in. |
