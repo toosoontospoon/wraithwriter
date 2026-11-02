@@ -14,6 +14,7 @@ webui = ["streamlit>=1.40"]
 tokens = ["tiktoken"]
 test = ["pytest>=8"]
 latin = ["nltk"]
+latin_pivot = ["nltk"]
 
 [project.scripts]
 bookforge = "bookforge.cli:main"

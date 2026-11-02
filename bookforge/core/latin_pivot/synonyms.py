@@ -141,7 +141,7 @@ def _wordnet():
         from nltk.corpus import wordnet as wn
     except ImportError as exc:
         raise SynonymError(
-            "nltk is not installed. Install the optional extra: pip install 'bookforge[latin]'"
+            "nltk is not installed. Install the optional extra: pip install 'bookforge[latin_pivot]'"
         ) from exc
     try:
         wn.synsets("dog")

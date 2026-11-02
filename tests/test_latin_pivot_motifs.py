@@ -190,7 +190,7 @@ def _first_write_estimate(ctx, chapter, scene):
     card = {**scene, "craft_brief": brief} if brief else dict(scene)
     beats = scrub_obj(list(card.get("beats") or [card.get("action") or "Write the scene."]))
     scene_for_write = {**scene, "beats": beats, "craft_brief": brief}
-    groups = wc._beat_groups(ctx, scene_for_write)
+    groups = [[b] for b in beats]  # latin_draft.per_beat defaults to true
     ban = cfg["latin_pivot"]["motif_ban"]
     extra = draft_instruction([ln for ln in opening.splitlines() if ln.strip()] if opening else [])
     extra = extra + "\n\n" + motif_instruction(ban.get("english"), ban.get("latin"))
@@ -533,3 +533,94 @@ def test_dry_run_reports_density_from_existing_texts_without_calls(tmp_path):
     assert set(report["motif_density"]) >= {"latin", "english_raw", "final"}
     assert talked["n"] == 1
     assert calls["n"] == 0
+
+
+def _spy_write_calls(monkeypatch):
+    """Record kwargs of every Latin draft call, then delegate to the fake LLM."""
+    seen = []
+    real = llm.llm_call
+
+    def spy(prompt, *args, **kwargs):
+        if kwargs.get("role") == "write" and "classical-style Latin" in (prompt or ""):
+            seen.append({"prompt": prompt, **kwargs})
+        return real(prompt, *args, **kwargs)
+
+    monkeypatch.setattr(llm, "llm_call", spy)
+    return seen
+
+
+def _run_latin_stage(project, monkeypatch, latin_pivot_cfg):
+    from bookforge.steps import write_chapter as wc
+    beats = ["The boy walks into the field.", "He finds a small dog.", "He carries it home."]
+    monkeypatch.setattr(wc, "_plan_beats", lambda *a, **k: list(beats))
+    monkeypatch.setattr("bookforge.core.latin_pivot.talkie_lifecycle.ping_endpoint", _ping)
+    talkie.set_fake(lambda *a, **k: ENGLISH_BOY)
+    config.set_config({"draft": {"mode": "latin_pivot"},
+                       "latin_pivot": {"fidelity": {"jev": False}, "cap_usd": 0.50,
+                                       "talkie": {"manage": False}, **latin_pivot_cfg}})
+    chapter = project.chapter("ch01")
+    execute(project=project.project_dir, chapter="ch01", scene=1, ctx=project,
+            chapter_obj=chapter, scene_obj=chapter["scenes"][0],
+            step_dir=project.project_dir / "step", ping=_ping, no_jev=True, cap_usd=0.50,
+            to_stage="fidelity")
+    return beats
+
+
+def test_latin_draft_defaults_one_call_per_beat_with_sampling(project, fake, monkeypatch):
+    _outline(project)
+    fake.hooks["write"] = lambda prompt, system: LATIN_BOY if "classical-style Latin" in (prompt or "") else None
+    seen = _spy_write_calls(monkeypatch)
+    beats = _run_latin_stage(project, monkeypatch, {})
+    assert len(seen) == len(beats)
+    for call, beat in zip(seen, beats):
+        assert beat in call["prompt"]
+        assert call["temperature"] == 0.6
+        assert call["sampling"] == {"frequency_penalty": 0.15}
+
+
+def test_latin_draft_sampling_overrides_pass_through(project, fake, monkeypatch):
+    _outline(project)
+    fake.hooks["write"] = lambda prompt, system: LATIN_BOY if "classical-style Latin" in (prompt or "") else None
+    seen = _spy_write_calls(monkeypatch)
+    beats = _run_latin_stage(project, monkeypatch,
+                             {"latin_draft": {"temperature": 0.5, "frequency_penalty": 0.0}})
+    assert len(seen) == len(beats)
+    assert all(c["temperature"] == 0.5 and c["sampling"] is None for c in seen)
+
+
+def test_frequency_penalty_reaches_the_request_body(monkeypatch):
+    sent = {}
+
+    class Prov:
+        extra_body = None
+        cache = None
+
+        def chat(self, model, system, prompt, temperature, max_tokens, json_mode):
+            sent.update(self.extra_body or {}, temperature=temperature)
+            return "Puer ambulat.", {"prompt_tokens": 1, "completion_tokens": 1}
+
+    monkeypatch.setattr(llm, "_FAKE", None)
+    monkeypatch.setattr(llm, "get_provider", lambda *a, **k: Prov())
+    monkeypatch.setattr(llm, "resolve_role", lambda *a, **k: ("p", "m"))
+    monkeypatch.setattr(llm, "adjusted_role_params",
+                        lambda *a, **k: {"extra_body": {"top_p": 0.9}, "mult": 1, "headroom": 0})
+    monkeypatch.setattr(llm, "_log_usage", lambda *a, **k: None)
+    out = llm.llm_call("x", role="write", temperature=0.6, sampling={"frequency_penalty": 0.15})
+    assert out == "Puer ambulat."
+    assert sent == {"top_p": 0.9, "frequency_penalty": 0.15, "temperature": 0.6}
+
+
+def test_default_config_stops_talkie_at_the_end(project, fake, monkeypatch, block_network):
+    _outline(project)
+    fake.hooks["write"] = lambda prompt, system: LATIN_BOY if "classical-style Latin" in (prompt or "") else None
+    monkeypatch.setattr("bookforge.core.latin_pivot.talkie_lifecycle.ping_endpoint", _ping)
+    talkie.set_fake(lambda *a, **k: ENGLISH_BOY)
+    config.set_config({"draft": {"mode": "latin_pivot"},
+                       "latin_pivot": {"fidelity": {"jev": False}, "cap_usd": 0.50}})
+    assert DEFAULT_CONFIG["latin_pivot"]["talkie"]["manage"] is True
+    chapter = project.chapter("ch01")
+    execute(project=project.project_dir, chapter="ch01", scene=1, ctx=project,
+            chapter_obj=chapter, scene_obj=chapter["scenes"][0],
+            step_dir=project.project_dir / "step", ping=_ping, no_jev=True, cap_usd=0.50,
+            to_stage="fidelity")
+    assert block_network == ["docker stop talkie"]

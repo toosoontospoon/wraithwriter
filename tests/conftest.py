@@ -55,6 +55,11 @@ def block_network(monkeypatch):
     monkeypatch.setattr(llm.requests, "post", boom)
     monkeypatch.setattr(llm.requests, "get", boom)
     monkeypatch.setattr(subprocess, "run", boom)
+    # talkie.manage defaults to true, so a run ends with talkie.stop_cmd. Record it, never run it.
+    from bookforge.core.latin_pivot import talkie_lifecycle
+    runs: list[str] = []
+    monkeypatch.setattr(talkie_lifecycle, "default_runner", lambda cmd: runs.append(cmd))
+    return runs
 
 
 @pytest.fixture
