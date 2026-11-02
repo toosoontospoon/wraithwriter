@@ -150,6 +150,38 @@ After each beat-by-beat call the write step runs `canon_pipeline.process_scene` 
 
 `protect.py` does not mark those paragraphs. Exact-line protection is off unless the chapter or `BOOKFORGE_PROTECT_EXACT_LINES` turns it on, and `norm()` folds punctuation, so a verbatim seed cannot be registered there without also protecting unrelated `KEEP` lines. The write step puts the opening back if craft scrub or `enforce_first_line` rewrites it. Later edit and revise passes do not have a seed lock. That is a known limit.
 
+## `draft`
+
+| Key | Default | Meaning |
+|---|---|---|
+| `mode` | `standard` | `standard` keeps the normal write path. `latin_pivot` sends the write step through the Latin pipeline. The CLI flag `--latin-pivot` does the same for one `run --step write` without changing this key. |
+
+## `latin_pivot`
+
+Off until `draft.mode` is `latin_pivot` or the write step is started with `--latin-pivot`. Details, stages, and costs are in [latin_pivot.md](latin_pivot.md).
+
+| Key | Default | Meaning |
+|---|---|---|
+| `latin_file` | `null` | When set, skip the Gemma Latin draft and translate this file. Same as `--latin-file`. |
+| `fewshot_path` | `null` | Override the packaged translation examples (`fewshot.json`). |
+| `out_dir` | `null` | Run directory. Null uses `<project>/runs/latin_pivot/<chapter>[-sK]/`. |
+| `cap_usd` | `0.50` | Abort before a Gemma or Jev call that would pass this spend. Talkie is $0. `--cap-usd` overrides one run. |
+| `fidelity.jev` | `true` | After the code heuristic passes, ask one Jev yes/no. `--no-jev` forces this off. |
+| `fidelity.jev_threshold` | `0.6` | Minimum Jev probability. Below it, the paragraph is retried. |
+| `fidelity.retries` | `1` | Extra translations after a failed check, at temperature 0.3. |
+| `fidelity.ratio_min` / `ratio_max` | `0.9` / `2.2` | Allowed English words divided by Latin words. |
+| `tag.threshold` | `0.6` | Keep a tell-list hit at or above this Jev probability. |
+| `tag.max_per_paragraph` | `12` | Cap on candidates sent for one paragraph. |
+| `tag.skip_dialogue` | `false` | When true, do not tag words inside quotation marks. |
+| `synonyms.max` | `8` | Synonyms offered to the picker. WordNet needs the optional `latin` extra (`nltk`). |
+| `pick.margin` | `0.1` | Swap only when the chosen synonym beats the original by at least this much. |
+| `talkie.endpoint` | `http://127.0.0.1:8080` | Local llama.cpp server the translator pings and calls. |
+| `talkie.manage` | `false` | When true, start the server if the ping fails. |
+| `talkie.start_cmd` | `""` | Command run only when `manage` is true and the server is down. Empty means unset. No path is built in. |
+| `talkie.stop_cmd` | `docker stop talkie` | Run on the way out when this run started the server or `stop_after` is true. |
+| `talkie.stop_after` | `null` | Null follows `manage`. |
+| `talkie.start_timeout_s` | `60` | How long to wait for `/health` after `start_cmd`. |
+
 ## `revise`
 
 | Key | Default | Meaning |
