@@ -580,6 +580,10 @@ def latin_pivot_run(project, chapter, scene, latin_file, from_stage, to_stage, o
     if dry_run:
         return
     click.echo(f"wrote {result['out_dir']}")
+    density = (result.get("report") or {}).get("motif_density")
+    if density:
+        from bookforge.core.latin_pivot.pipeline import format_motif_density
+        click.echo(format_motif_density(density))
 
 
 @latin_pivot_group.command("estimate")

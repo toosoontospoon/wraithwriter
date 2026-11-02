@@ -12,6 +12,8 @@ from typing import Any, Dict
 
 import yaml
 
+from bookforge.core.latin_pivot.motifs import ALWAYS_FLAG_DEFAULT, MOTIF_BAN_DEFAULT
+
 # Featherless Gemma on the Hugging Face router. 32k context, no reasoning body.
 # USD per 1M from the featherless.ai model page (HF router adds no markup).
 GEMMA_MODEL_ID = "nbeerbower/Gemma4-Gutenberg-31B-Heretic:featherless-ai"
@@ -166,6 +168,10 @@ DEFAULT_CONFIG: Dict[str, Any] = {
         "tag": {"threshold": 0.6, "max_per_paragraph": 12, "skip_dialogue": False},
         "synonyms": {"max": 8},
         "pick": {"margin": 0.1},
+        # Silence and quiet are strong AI-prose tells in this pipeline's Latin and English.
+        # Stem patterns are data so they can be tightened without a code change.
+        "motif_ban": copy.deepcopy(MOTIF_BAN_DEFAULT),
+        "always_flag": copy.deepcopy(ALWAYS_FLAG_DEFAULT),
         # manage is off, so nothing is started or stopped. stop_after null follows manage
         # (true when manage is true). start_cmd is empty: no server path is baked in.
         "talkie": {

@@ -30,13 +30,13 @@ def _scene_card_hash(ctx, chapter, scene):
     return stable_hash([chapter.get("id"), scene, chapter.get("ends_with"), plan_hash])
 
 
-def _plan_beats(ctx, chapter, scene, step_dir):
+def _plan_beats(ctx, chapter, scene, step_dir, extra: str = ""):
     covered = ctx.load_summaries()["scenes"].get(chapter["id"], {})
     canon = ctx.canon()
     threads = [t["description"] for t in canon.open_threads()]
     from bookforge.core.length import BEAT_TYPE_GUIDE, CRISIS_RULE, NO_FILLER_RULE
     from bookforge.core import pack
-    res = llm_call(f"""{pack.chapter_pack(ctx, chapter)}{pack.chapter_plan_block(chapter, scene)}
+    prompt = f"""{pack.chapter_pack(ctx, chapter)}{pack.chapter_plan_block(chapter, scene)}
 {pack.author_plan_block(ctx, chapter["id"])}
 
 Turn this scene card into an ordered beat sheet of 1-8 concrete beats: exactly as many as the scene's events need. {BEAT_TYPE_GUIDE} {NO_FILLER_RULE} {CRISIS_RULE}
@@ -53,7 +53,10 @@ Each beat is a concrete, clearly described event. CLARITY (reader is about 16): 
 
 SELF-CHECK before answering: re-read the continuity sheet and the earlier chapters' text in the story pack. Every beat must agree with them (geography, who lives where, who owns what, injuries, what each character knows, time of day). Use the word "introduce" only for a first appearance in the book.
 
-Output ONLY JSON: {{"beats": ["(~280w, dialogue) ..."]}}""", system=pack.system_for(ctx, chapter), role="plan",
+Output ONLY JSON: {{"beats": ["(~280w, dialogue) ..."]}}"""
+    if extra and str(extra).strip():
+        prompt = prompt + "\n\n" + str(extra).strip()
+    res = llm_call(prompt, system=pack.system_for(ctx, chapter), role="plan",
                    schema=BeatSheet, max_tokens=6000, temperature=0.3, raw_dir=step_dir)
     beats = res.beats or scene.get("beats") or [scene.get("action", "Write the scene.")]
     return scrub_obj(beats)

@@ -22,6 +22,15 @@ from bookforge.core.latin_pivot.seeds import (
 from bookforge.core.latin_pivot.synonyms import WordNetSynonymSource, suggest
 from bookforge.core.latin_pivot.tagger import find_candidates, load_tell_terms, tag_questions, tag_state
 from bookforge.core.latin_pivot.talkie_lifecycle import TalkieSession
+from bookforge.core.latin_pivot.motifs import (
+    corrective_note,
+    latin_hits,
+    match_always_flag,
+    motif_density,
+    motif_instruction,
+    still_question,
+    still_state,
+)
 from bookforge.core.latin_pivot.translate import (
     REPEAT_PENALTY,
     RETRY_TEMPERATURE,
@@ -146,9 +155,52 @@ def cost_estimate(latin_text: str | None, cfg: dict, stages: list[str], *, no_je
     }
 
 
+def format_motif_density(density: dict | None) -> str:
+    """One line per text. Missing blocks print as zero."""
+    density = density or {}
+    lines = []
+    for key in ("latin", "english_raw", "final"):
+        block = density.get(key) or {"hits": 0, "words": 0, "per_1k": 0.0}
+        lines.append(
+            f"motif_density {key}: {block['per_1k']:.1f} per_1k "
+            f"({block['hits']} hits / {block['words']} words)"
+        )
+    return "\n".join(lines)
+
+
+def _density_report(latin: str, english_raw: str, final: str, lp: dict) -> dict:
+    ban = lp.get("motif_ban") or {}
+    phrases = (lp.get("always_flag") or {}).get("phrases")
+    patterns = ban.get("latin_patterns")
+
+    def english(text: str):
+        return match_always_flag(text, phrases)
+
+    return {
+        "latin": motif_density(latin or "", lambda text: latin_hits(text, patterns)),
+        "english_raw": motif_density(english_raw or "", english),
+        "final": motif_density(final or "", english),
+    }
+
+
+def _density_from_files(folder: Path, lp: dict, latin_preview: str = "") -> dict:
+    def read(name: str, fallback: str = "") -> str:
+        path = folder / name
+        if path.is_file():
+            return path.read_text(encoding="utf-8")
+        return fallback
+
+    return _density_report(
+        read("latin.txt", latin_preview),
+        read("english_raw.txt"),
+        read("final.txt"),
+        lp,
+    )
+
+
 def format_estimate(est: dict) -> str:
     gemma = "unknown" if est["gemma_usd_est"] is None else f"{est['gemma_usd_est']:.6f}"
-    return "\n".join([
+    lines = [
         "stages: " + ", ".join(est["stages"]),
         f"paragraphs: {est['paragraphs']}",
         f"cost_usd_est: {est['cost_usd_est']:.6f}",
@@ -157,7 +209,10 @@ def format_estimate(est: dict) -> str:
         f"jev_usd_est: {est['jev_usd_est']:.6f}",
         f"gemma_usd_est: {gemma}",
         est["note"],
-    ])
+    ]
+    if est.get("motif_density") is not None:
+        lines.append(format_motif_density(est["motif_density"]))
+    return "\n".join(lines)
 
 
 def _translate_one(para: str, *, fewshot: dict, endpoint: str, seed: int, temperature: float,
@@ -195,18 +250,27 @@ def _draft_latin(ctx, chapter, scene, so_far: str, step_dir: Path, cfg: dict, bu
     opening = seed_for_scene(ctx, chapter, scene) if ctx is not None else ""
     brief = craft.brief(ctx, chapter, scene) if ctx is not None else ""
     card = {**scene, "craft_brief": brief} if brief else dict(scene)
-    plan_blob = pack.chapter_pack(ctx, chapter) + pack.chapter_plan_block(chapter, scene)
+    seed_lines = [ln for ln in (opening or "").splitlines() if ln.strip()] if opening else []
+    ban = ((cfg.get("latin_pivot") or {}).get("motif_ban") or {})
+    ban_note = ""
+    if ban.get("enabled", True):
+        ban_note = motif_instruction(ban.get("english"), ban.get("latin"))
+    plan_blob = pack.chapter_pack(ctx, chapter) + pack.chapter_plan_block(chapter, scene) + ban_note
     plan_est = role_input_cost("plan", "", plan_blob, cfg)
     budget.ensure("latin", plan_est)
     before = llm.spent()
-    beats = wc._plan_beats(ctx, chapter, card, step_dir)
+    beats = wc._plan_beats(ctx, chapter, card, step_dir, extra=ban_note)
     budget.charge_observed("latin", "gemma", plan_est, llm.spent() - before)
     scene_for_write = {**scene, "beats": beats, "craft_brief": brief}
     groups = wc._beat_groups(ctx, scene_for_write)
     pieces = []
-    seed_lines = [ln for ln in (opening or "").splitlines() if ln.strip()] if opening else []
     extra = draft_instruction(seed_lines)
+    if ban_note:
+        extra = extra + "\n\n" + ban_note
     from bookforge.config import resolve_role
+    patterns = ban.get("latin_patterns")
+    regen = bool(ban.get("enabled", True)) and str(ban.get("action") or "regenerate") == "regenerate"
+    limit = int(ban.get("max_regens", 1))
     for i, group in enumerate(groups, 1):
         words = _ceiling(group)
         system, prompt = pack.build_write(ctx, chapter, scene_for_write, group, so_far, words, i, len(groups))
@@ -222,6 +286,18 @@ def _draft_latin(ctx, chapter, scene, so_far: str, step_dir: Path, cfg: dict, bu
         out = llm.llm_call(prompt, system=system, role="write", temperature=0.8,
                            max_tokens=wc.write_max_tokens(words))
         budget.charge_observed("latin", "gemma", est, llm.spent() - before)
+        if regen:
+            for _attempt in range(max(0, limit)):
+                hits = latin_hits(out or "", patterns)
+                if not hits:
+                    break
+                prompt_r = prompt + "\n\n" + corrective_note(hits)
+                est = gemma_cost(system, prompt_r, cfg)
+                budget.ensure("latin", est)
+                before = llm.spent()
+                out = llm.llm_call(prompt_r, system=system, role="write", temperature=0.8,
+                                   max_tokens=wc.write_max_tokens(words))
+                budget.charge_observed("latin", "gemma", est, llm.spent() - before)
         pieces.append((out or "").strip())
     return "\n\n".join(p for p in pieces if p)
 
@@ -276,6 +352,7 @@ def execute(*, project, chapter: str, scene: int | None = None, latin_file: str 
     estimate = cost_estimate(latin_preview, cfg, stages, no_jev=no_jev,
                              have_latin=have_latin or "latin" not in stages)
     if dry_run:
+        estimate["motif_density"] = _density_from_files(folder, lp, latin_preview)
         print(format_estimate(estimate))
         return {"dry_run": True, "out_dir": folder, "estimate": estimate, "final": ""}
 
@@ -284,6 +361,7 @@ def execute(*, project, chapter: str, scene: int | None = None, latin_file: str 
     budget = Budget(cap)
     timings: dict[str, float] = {}
     flagged: list[int] = []
+    side = {"latin_motif_hits": [], "always_flag": []}
     aborted = None
     final = ""
     talkie_cfg = dict(lp.get("talkie") or {})
@@ -292,11 +370,11 @@ def execute(*, project, chapter: str, scene: int | None = None, latin_file: str 
 
     def _run():
         nonlocal final
-        latin = _stage_latin(stages, folder, given, ctx, chapter_obj, scene_obj, so_far, step_dir, cfg, budget, timings)
+        latin = _stage_latin(stages, folder, given, ctx, chapter_obj, scene_obj, so_far, step_dir, cfg, budget, timings, side)
         paras = split_paragraphs(latin)
         english = _stage_translate(stages, folder, paras, lp, cfg, budget, timings)
         english = _stage_fidelity(stages, folder, paras, english, lp, cfg, budget, timings, flagged, no_jev)
-        tagged = _stage_tag(stages, folder, english, lp, cfg, budget, timings, no_jev)
+        tagged = _stage_tag(stages, folder, english, lp, cfg, budget, timings, no_jev, side)
         with_syn = _stage_synonyms(stages, folder, tagged, lp, timings, synonym_source)
         swapped = _stage_pick(stages, folder, with_syn, lp, cfg, budget, timings, no_jev)
         final = _stage_scrub(stages, folder, latin, swapped, timings)
@@ -324,17 +402,40 @@ def execute(*, project, chapter: str, scene: int | None = None, latin_file: str 
             "aborted_reason": aborted,
             "dry_run": False,
             "estimate": estimate,
+            "latin_motif_hits": list(side.get("latin_motif_hits") or []),
+            "always_flag_count": len(side.get("always_flag") or []),
+            "motif_density": _density_from_files(folder, lp, ""),
         }
         (folder / "run.json").write_text(json.dumps(report, indent=2) + "\n", encoding="utf-8")
     return {"dry_run": False, "out_dir": folder, "final": final, "report": report, "estimate": estimate}
 
 
-def _stage_latin(stages, folder, given, ctx, chapter_obj, scene_obj, so_far, step_dir, cfg, budget, timings) -> str:
+def _latin_motif_rows(text: str, lp: dict) -> list[dict]:
+    ban = lp.get("motif_ban") or {}
+    if not ban.get("enabled", True):
+        return []
+    hits = latin_hits(text, ban.get("latin_patterns"))
+    return [{"paragraph_index": hit["paragraph_index"], "word": hit["word"], "sentence": hit["sentence"]}
+            for hit in hits]
+
+
+def _write_latin_motifs(folder: Path, rows: list[dict]) -> None:
+    if not rows:
+        return
+    (folder / "latin_motif_hits.json").write_text(
+        json.dumps(rows, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+
+
+def _stage_latin(stages, folder, given, ctx, chapter_obj, scene_obj, so_far, step_dir, cfg, budget, timings, side) -> str:
     path = folder / "latin.txt"
     if "latin" not in stages:
         if not path.exists():
             raise FileNotFoundError(f"latin stage skipped and {path} is missing")
-        return path.read_text(encoding="utf-8")
+        text = path.read_text(encoding="utf-8")
+        rows = _latin_motif_rows(text, _lp(cfg))
+        side["latin_motif_hits"] = rows
+        _write_latin_motifs(folder, rows)
+        return text
     t0 = time.perf_counter()
     if given is not None:
         text = Path(given).read_text(encoding="utf-8")
@@ -346,8 +447,12 @@ def _stage_latin(stages, folder, given, ctx, chapter_obj, scene_obj, so_far, ste
     else:
         raise FileNotFoundError("latin stage needs a project scene or --latin-file")
     path.write_text(text if text.endswith("\n") else text + "\n", encoding="utf-8")
+    text = path.read_text(encoding="utf-8")
+    rows = _latin_motif_rows(text, _lp(cfg))
+    side["latin_motif_hits"] = rows
+    _write_latin_motifs(folder, rows)
     timings["latin"] = time.perf_counter() - t0
-    return path.read_text(encoding="utf-8")
+    return text
 
 
 def _stage_translate(stages, folder, paras, lp, cfg, budget, timings) -> list[str]:
@@ -450,7 +555,69 @@ def _stage_fidelity(stages, folder, paras, english, lp, cfg, budget, timings, fl
     return chosen
 
 
-def _stage_tag(stages, folder, english, lp, cfg, budget, timings, no_jev) -> list[dict]:
+def _flag_rows(index: int, hits: list[dict]) -> list[dict]:
+    rows = []
+    for hit in hits:
+        rows.append({
+            "paragraph_index": index,
+            "sentence_index": int(hit.get("sentence_index") or 0),
+            "sentence": hit.get("sentence") or "",
+            "motif": hit.get("motif") or "",
+            "matched_text": hit.get("matched_text") or "",
+            "span": [int(hit["start"]), int(hit["end"])],
+            "ambiguous": bool(hit.get("ambiguous")),
+        })
+    return rows
+
+
+def _resolve_still(hits: list[dict], *, classifier: str, jev_on: bool, ask, cfg, budget) -> list[dict]:
+    """Keep stillness hits. Ambiguous ``still`` may take one capped Jev noul."""
+    kept = []
+    for hit in hits:
+        if str(hit.get("motif") or "").lower() != "still" or hit.get("sense") is True:
+            item = dict(hit)
+            if str(hit.get("motif") or "").lower() != "still":
+                item["ambiguous"] = False
+            kept.append(item)
+            continue
+        if hit.get("sense") is False:
+            continue
+        use_jev = jev_on and str(classifier or "jev").lower() == "jev"
+        if not use_jev:
+            item = dict(hit)
+            item["ambiguous"] = True
+            kept.append(item)
+            continue
+        try:
+            res = ask(still_state(hit.get("sentence") or ""), still_question(hit.get("sentence") or ""),
+                      model=_jev_model(cfg), tag="latin_pivot:still", log_dir=None, cap_usd=budget.cap)
+        except jev.JevUnavailable:
+            item = dict(hit)
+            item["ambiguous"] = True
+            kept.append(item)
+            continue
+        score = jev.noul(res, "stillness")
+        if score is None or float(score) < 0.5:
+            continue
+        item = dict(hit)
+        item["sense"] = True
+        item["ambiguous"] = False
+        kept.append(item)
+    return kept
+
+
+def _drop_flagged_candidates(candidates: list[dict], flags: list[dict]) -> list[dict]:
+    spans = [(int(hit["start"]), int(hit["end"])) for hit in flags]
+    kept = []
+    for candidate in candidates:
+        start, end = int(candidate["start"]), int(candidate["end"])
+        if any(start < stop and begin < end for begin, stop in spans):
+            continue
+        kept.append(candidate)
+    return kept
+
+
+def _stage_tag(stages, folder, english, lp, cfg, budget, timings, no_jev, side) -> list[dict]:
     tag_cfg = lp.get("tag") or {}
     if "tag" not in stages:
         return [{"index": i, "text": text, "kept": []} for i, text in enumerate(english)]
@@ -460,10 +627,15 @@ def _stage_tag(stages, folder, english, lp, cfg, budget, timings, no_jev) -> lis
     skip = bool(tag_cfg.get("skip_dialogue", False))
     threshold = float(tag_cfg.get("threshold", 0.6))
     jev_on = not no_jev
+    flag_cfg = lp.get("always_flag") or {}
+    flag_on = bool(flag_cfg.get("enabled", True))
+    phrases = flag_cfg.get("phrases")
+    classifier = flag_cfg.get("still_classifier", "jev")
     ck = folder / "checkpoints" / "tag.jsonl"
     done = _done(ck)
     rows = []
     packed = []
+    all_flags: list[dict] = []
     ask = _billed_ask(budget, "tag", folder)
     for index, text in enumerate(english):
         key = text_hash(text)
@@ -471,8 +643,14 @@ def _stage_tag(stages, folder, english, lp, cfg, budget, timings, no_jev) -> lis
             rec = done[(index, key)]
             rows.append(rec)
             packed.append({"index": index, "text": text, "kept": rec.get("kept") or []})
+            all_flags.extend(rec.get("always_flag") or [])
             continue
-        candidates = find_candidates(text, terms, skip_dialogue=skip, limit=limit)
+        raw_flags = match_always_flag(text, phrases) if flag_on else []
+        flags = _resolve_still(raw_flags, classifier=classifier, jev_on=jev_on, ask=ask,
+                               cfg=cfg, budget=budget) if raw_flags else []
+        flag_rows = _flag_rows(index, flags)
+        candidates = _drop_flagged_candidates(
+            find_candidates(text, terms, skip_dialogue=skip, limit=limit), flags)
         mode = "off"
         if candidates and jev_on:
             try:
@@ -495,12 +673,16 @@ def _stage_tag(stages, folder, english, lp, cfg, budget, timings, no_jev) -> lis
             mode = "off" if not jev_on else mode
         kept = [h for h in candidates if h.get("kept")]
         rec = {"index": index, "input_hash": key, "output": text, "candidates": candidates,
-               "kept": kept, "jev_mode": mode}
+               "kept": kept, "always_flag": flag_rows, "jev_mode": mode}
         _append(ck, rec)
         rows.append(rec)
         packed.append({"index": index, "text": text, "kept": kept})
+        all_flags.extend(flag_rows)
     (folder / "tags.jsonl").write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in rows),
                                        encoding="utf-8")
+    (folder / "flag_for_edit.json").write_text(
+        json.dumps(all_flags, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    side["always_flag"] = all_flags
     timings["tag"] = time.perf_counter() - t0
     return packed
 
